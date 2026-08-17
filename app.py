@@ -1,5 +1,14 @@
-import gradio as gr
 import os
+# Force CPU mode and prevent HF Spaces ZeroGPU CUDA conflict
+os.environ["CUDA_VISIBLE_DEVICES"] = ""
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
+
+try:
+    import spaces
+except Exception:
+    pass
+
+import gradio as gr
 
 # Load .env file (for local development)
 try:
@@ -137,5 +146,4 @@ with gr.Blocks(title="College RAG Chatbot") as demo:
         """)
 
 if __name__ == "__main__":
-    print("Starting Gradio server...")
-    demo.launch(server_name="127.0.0.1", server_port=7860)
+    demo.launch()
