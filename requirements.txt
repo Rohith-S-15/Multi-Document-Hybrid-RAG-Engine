@@ -1,0 +1,26 @@
+# College RAG Chatbot — Dependencies
+# Maintained by: Opus + Fable (keep in sync)
+
+# UI
+gradio
+
+# Embeddings
+sentence-transformers
+
+# Vector Database
+chromadb
+
+# Web Scraping
+beautifulsoup4
+requests
+
+# Document Parsing
+python-docx
+PyPDF2
+
+# LLM API (HuggingFace)
+huggingface-hub
+
+# Utilities
+numpy
+python-dotenv
