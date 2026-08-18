@@ -30,8 +30,6 @@ def ingest_file(file):
     if file is None:
         return "No file uploaded."
     try:
-        # file is a tuple (filename, file_data) or similar depending on Gradio version
-        # In Gradio 4, file is a NamedString or similar with .name attribute
         filepath = file.name if hasattr(file, 'name') else file
         rag_engine.ingest_document(filepath)
         return f"Successfully ingested: {os.path.basename(filepath)}"
@@ -53,20 +51,15 @@ def ingest_url(url):
 def chat_function(message, history):
     """
     Gradio chatbot function: takes user message and history, returns response.
-    history is a list of tuples (user_msg, bot_msg).
     """
     try:
-        # Retrieve relevant chunks
         chunks = rag_engine.query(message, top_k=3)
         if not chunks:
             return "I don't have enough information to answer that question. Please upload some documents or scrape a URL first."
-        # Generate answer
         answer = rag_engine.generate_answer(message, chunks)
-        # Format sources for display
         sources_info = "\n\n**Sources:**\n"
         for i, chunk in enumerate(chunks, 1):
             source = chunk.get('source', 'unknown')
-            # Truncate long source names
             if len(source) > 50:
                 source = source[:47] + "..."
             sources_info += f"{i}. {source} (similarity: {chunk.get('score', 'N/A'):.4f})\n"
@@ -75,7 +68,7 @@ def chat_function(message, history):
         return f"Error: {e}"
 
 def clear_chat():
-    return None, None  # Clear chatbot and reset state if needed
+    return None, None
 
 # Build Gradio interface
 with gr.Blocks(title="College RAG Chatbot") as demo:
@@ -129,21 +122,17 @@ with gr.Blocks(title="College RAG Chatbot") as demo:
         2. **Process**: Text is extracted, chunked, and embedded using sentence-transformers.
         3. **Store**: Chunks are saved in ChromaDB vector database.
         4. **Query**: When you ask a question, the system retrieves relevant chunks.
-        5. **Answer**: The retrieved context is sent to a Hugging Face LLM (Mistral-7B-Instruct) to generate a grounded answer.
+        5. **Answer**: The retrieved context is sent to a Hugging Face LLM (Qwen-2.5-7B-Instruct) to generate a grounded answer.
         6. **Cite**: The answer is based solely on the uploaded/scraped content.
 
         **Tech Stack**
-        - LLM: Hugging Face Inference API (Mistral-7B-Instruct-v0.2)
+        - LLM: Hugging Face Inference API (Qwen/Qwen2.5-7B-Instruct)
         - Embeddings: sentence-transformers/all-MiniLM-L6-v2
         - Vector Store: ChromaDB (local persistence)
         - UI: Gradio
         - File Parsing: PyPDF2, python-docx
         - Web Scraping: BeautifulSoup4, requests
-
-        **Deployment**
-        - Built for Hugging Face Spaces (Gradio SDK)
-        - Zero cost: all components have free tiers or are open-source.
         """)
 
 if __name__ == "__main__":
-    demo.launch()
+    demo.launch(ssr_mode=False)
