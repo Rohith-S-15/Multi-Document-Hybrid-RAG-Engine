@@ -2,6 +2,8 @@ import os
 # Force CPU mode and prevent HF Spaces ZeroGPU CUDA conflict
 os.environ["CUDA_VISIBLE_DEVICES"] = ""
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
+# Disable Gradio 6 Server-Side Rendering (causes blank page on HF Spaces)
+os.environ["GRADIO_SSR_MODE"] = "false"
 
 # Handle spaces import for HF Spaces compatibility
 try:
@@ -253,5 +255,4 @@ with demo:
         """)
 
 
-if __name__ == "__main__":
-    demo.launch(ssr_mode=False)
+demo.launch(ssr_mode=False)
