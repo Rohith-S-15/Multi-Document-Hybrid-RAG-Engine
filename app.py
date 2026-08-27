@@ -8,14 +8,15 @@ try:
     import spaces
 except ImportError:
     # Mock spaces for local development
-    class MockSpaces:
-        def GPU(self, func=None, **kwargs):
+    class _MockSpaces:
+        @staticmethod
+        def GPU(func=None, **kwargs):
             if func is not None:
                 return func
             def decorator(f):
                 return f
             return decorator
-    spaces = MockSpaces()
+    spaces = _MockSpaces()
 
 import gradio as gr
 
@@ -32,8 +33,14 @@ from rag_engine import RagEngine
 rag_engine = RagEngine()
 
 
+# Dummy GPU function — satisfies ZeroGPU startup requirement
+@spaces.GPU
+def _gpu_init():
+    return True
+
+
 # ════════════════════════════════════════════════════════
-#  HANDLER FUNCTIONS
+#  TOP-LEVEL HANDLER FUNCTIONS (must be picklable)
 # ════════════════════════════════════════════════════════
 
 def ingest_file(file):
@@ -131,121 +138,120 @@ def clear_index():
     return "🗑️ Index cleared. Upload new documents or scrape URLs to rebuild."
 
 
+def respond(message, chat_history):
+    """Top-level respond function (must be picklable for ZeroGPU)."""
+    if not message or not message.strip():
+        return "", chat_history
+    bot_message = chat_function(message, chat_history)
+    chat_history = chat_history or []
+    chat_history.append({"role": "user", "content": message})
+    chat_history.append({"role": "assistant", "content": bot_message})
+    return "", chat_history
+
+
+def clear_chat():
+    """Top-level clear chat function (must be picklable for ZeroGPU)."""
+    return []
+
+
 # ════════════════════════════════════════════════════════
-#  GRADIO UI
+#  BUILD GRADIO UI — demo must be a top-level variable
 # ════════════════════════════════════════════════════════
 
-@spaces.GPU
-def dummy_gpu_func():
-    """Dummy function to satisfy Hugging Face ZeroGPU startup requirements."""
-    return "GPU initialized"
+demo = gr.Blocks(title="🎓 NMIT College RAG Chatbot")
 
+with demo:
+    gr.Markdown("# 🎓 NMIT College RAG Chatbot")
+    gr.Markdown(
+        "Upload college documents (PDF, DOCX, TXT, CSV) or scrape public college "
+        "websites to build a knowledge base, then ask questions! "
+        "Powered by **Groq AI** + **FAISS** + **LangChain**."
+    )
 
-def create_app():
-    """Create and return the Gradio app."""
-    with gr.Blocks(title="🎓 NMIT College RAG Chatbot") as demo:
-        gr.Markdown("# 🎓 NMIT College RAG Chatbot")
+    with gr.Tab("💬 Chat"):
+        gr.Markdown("### Ask questions about your college data")
+        chatbot = gr.Chatbot(label="Conversation", height=450)
+        with gr.Row():
+            msg = gr.Textbox(
+                label="Your Question",
+                placeholder="Ask about courses, placements, facilities, admissions...",
+                lines=2,
+                scale=4,
+            )
+            submit_btn = gr.Button("Send", variant="primary", scale=1)
+        with gr.Row():
+            clear_btn = gr.Button("🗑️ Clear Chat", variant="secondary")
+
         gr.Markdown(
-            "Upload college documents (PDF, DOCX, TXT, CSV) or scrape public college "
-            "websites to build a knowledge base, then ask questions! "
-            "Powered by **Groq AI** + **FAISS** + **LangChain**."
+            "**Try asking:** *What courses does NMIT offer?* · "
+            "*What are the placement statistics?* · "
+            "*Tell me about hostel facilities* · "
+            "*What is the admission process?*"
         )
 
-        with gr.Tab("💬 Chat"):
-            gr.Markdown("### Ask questions about your college data")
-            chatbot = gr.Chatbot(label="Conversation", height=450)
-            with gr.Row():
-                msg = gr.Textbox(
-                    label="Your Question",
-                    placeholder="Ask about courses, placements, facilities, admissions...",
-                    lines=2,
-                    scale=4,
+        submit_btn.click(respond, inputs=[msg, chatbot], outputs=[msg, chatbot])
+        msg.submit(respond, inputs=[msg, chatbot], outputs=[msg, chatbot])
+        clear_btn.click(clear_chat, None, chatbot, queue=False)
+
+    with gr.Tab("📥 Ingest Data"):
+        gr.Markdown("### Add knowledge to the chatbot")
+        with gr.Row():
+            with gr.Column():
+                gr.Markdown("#### 📄 Upload Document")
+                file_input = gr.File(
+                    label="Upload Document (PDF, DOCX, TXT, CSV)",
+                    file_types=[".pdf", ".docx", ".txt", ".csv"],
                 )
-                submit_btn = gr.Button("Send", variant="primary", scale=1)
-            with gr.Row():
-                clear_btn = gr.Button("🗑️ Clear Chat", variant="secondary")
+                ingest_file_btn = gr.Button("Ingest Uploaded File", variant="primary")
+                file_status = gr.Textbox(label="Status", interactive=False, lines=2)
+            with gr.Column():
+                gr.Markdown("#### 🌐 Scrape Website")
+                url_input = gr.Textbox(
+                    label="Enter College Website URL",
+                    placeholder="https://nitte.edu.in/nmit/about-nmit-bangalore.php",
+                )
+                ingest_url_btn = gr.Button("Ingest URL", variant="primary")
+                url_status = gr.Textbox(label="Status", interactive=False, lines=2)
 
-            gr.Markdown(
-                "**Try asking:** *What courses does NMIT offer?* · "
-                "*What are the placement statistics?* · "
-                "*Tell me about hostel facilities* · "
-                "*What is the admission process?*"
-            )
+        ingest_file_btn.click(ingest_file, inputs=file_input, outputs=file_status)
+        ingest_url_btn.click(ingest_url, inputs=url_input, outputs=url_status)
 
-            def respond(message, chat_history):
-                if not message or not message.strip():
-                    return "", chat_history
-                bot_message = chat_function(message, chat_history)
-                chat_history = chat_history or []
-                chat_history.append({"role": "user", "content": message})
-                chat_history.append({"role": "assistant", "content": bot_message})
-                return "", chat_history
+        gr.Markdown("---")
+        gr.Markdown("#### 📊 Index Status")
+        index_info = gr.Textbox(label="Current Index", interactive=False, lines=5)
+        with gr.Row():
+            refresh_btn = gr.Button("🔄 Refresh Stats")
+            clear_index_btn = gr.Button("🗑️ Clear Index", variant="stop")
 
-            submit_btn.click(respond, inputs=[msg, chatbot], outputs=[msg, chatbot])
-            msg.submit(respond, inputs=[msg, chatbot], outputs=[msg, chatbot])
-            clear_btn.click(lambda: [], None, chatbot, queue=False)
+        refresh_btn.click(get_index_info, outputs=index_info)
+        clear_index_btn.click(clear_index, outputs=index_info)
 
-        with gr.Tab("📥 Ingest Data"):
-            gr.Markdown("### Add knowledge to the chatbot")
-            with gr.Row():
-                with gr.Column():
-                    gr.Markdown("#### 📄 Upload Document")
-                    file_input = gr.File(
-                        label="Upload Document (PDF, DOCX, TXT, CSV)",
-                        file_types=[".pdf", ".docx", ".txt", ".csv"],
-                    )
-                    ingest_file_btn = gr.Button("Ingest Uploaded File", variant="primary")
-                    file_status = gr.Textbox(label="Status", interactive=False, lines=2)
-                with gr.Column():
-                    gr.Markdown("#### 🌐 Scrape Website")
-                    url_input = gr.Textbox(
-                        label="Enter College Website URL",
-                        placeholder="https://nitte.edu.in/nmit/about-nmit-bangalore.php",
-                    )
-                    ingest_url_btn = gr.Button("Ingest URL", variant="primary")
-                    url_status = gr.Textbox(label="Status", interactive=False, lines=2)
+    with gr.Tab("ℹ️ About"):
+        gr.Markdown("""
+        ## How it works
+        1. **Ingest**: Upload documents or provide URLs to college websites.
+        2. **Process**: Text is extracted and chunked using LangChain's RecursiveCharacterTextSplitter.
+        3. **Embed**: Chunks are embedded using `sentence-transformers/all-MiniLM-L6-v2`.
+        4. **Store**: Embeddings are stored in a FAISS vector index for fast similarity search.
+        5. **Query**: When you ask a question, the system retrieves the most relevant chunks.
+        6. **Answer**: The retrieved context is sent to **Groq AI** (qwen/qwen3.6-27b) to generate a grounded answer.
+        7. **Cite**: The answer references specific sources and may include related images.
 
-            ingest_file_btn.click(ingest_file, inputs=file_input, outputs=file_status)
-            ingest_url_btn.click(ingest_url, inputs=url_input, outputs=url_status)
+        ## Tech Stack
+        | Component | Technology |
+        |-----------|------------|
+        | **LLM** | Groq API (qwen/qwen3.6-27b) |
+        | **Embeddings** | sentence-transformers/all-MiniLM-L6-v2 |
+        | **Vector Store** | FAISS (Facebook AI Similarity Search) |
+        | **Chunking** | LangChain RecursiveCharacterTextSplitter |
+        | **Document Parsing** | LangChain loaders (PDF, DOCX, TXT, CSV) |
+        | **Web Scraping** | BeautifulSoup4 + requests |
+        | **UI** | Gradio |
 
-            gr.Markdown("---")
-            gr.Markdown("#### 📊 Index Status")
-            index_info = gr.Textbox(label="Current Index", interactive=False, lines=5)
-            with gr.Row():
-                refresh_btn = gr.Button("🔄 Refresh Stats")
-                clear_index_btn = gr.Button("🗑️ Clear Index", variant="stop")
-
-            refresh_btn.click(get_index_info, outputs=index_info)
-            clear_index_btn.click(clear_index, outputs=index_info)
-
-        with gr.Tab("ℹ️ About"):
-            gr.Markdown("""
-            ## How it works
-            1. **Ingest**: Upload documents or provide URLs to college websites.
-            2. **Process**: Text is extracted and chunked using LangChain's RecursiveCharacterTextSplitter.
-            3. **Embed**: Chunks are embedded using `sentence-transformers/all-MiniLM-L6-v2`.
-            4. **Store**: Embeddings are stored in a FAISS vector index for fast similarity search.
-            5. **Query**: When you ask a question, the system retrieves the most relevant chunks.
-            6. **Answer**: The retrieved context is sent to **Groq AI** (qwen/qwen3.6-27b) to generate a grounded answer.
-            7. **Cite**: The answer references specific sources and may include related images.
-
-            ## Tech Stack
-            | Component | Technology |
-            |-----------|------------|
-            | **LLM** | Groq API (qwen/qwen3.6-27b) |
-            | **Embeddings** | sentence-transformers/all-MiniLM-L6-v2 |
-            | **Vector Store** | FAISS (Facebook AI Similarity Search) |
-            | **Chunking** | LangChain RecursiveCharacterTextSplitter |
-            | **Document Parsing** | LangChain loaders (PDF, DOCX, TXT, CSV) |
-            | **Web Scraping** | BeautifulSoup4 + requests |
-            | **UI** | Gradio |
-
-            ## Built by
-            Rohit S — NMIT Bangalore | Resume Portfolio Project
-            """)
-    return demo
+        ## Built by
+        Rohit S — NMIT Bangalore | Resume Portfolio Project
+        """)
 
 
 if __name__ == "__main__":
-    demo = create_app()
     demo.launch(ssr_mode=False)
