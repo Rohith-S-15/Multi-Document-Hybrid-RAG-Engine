@@ -19,94 +19,151 @@ except ImportError:
 
 from rag_engine import RagEngine
 
-# Initialize RAG engine (will read HF_TOKEN from environment)
+# Initialize RAG engine (reads GROQ_API_KEY from environment)
 rag_engine = RagEngine()
 
+
+# ═══════════════════════════════════════════════════════
+#  HANDLER FUNCTIONS
+# ═══════════════════════════════════════════════════════
+
 def ingest_file(file):
-    """
-    Handle uploaded file: save temporarily, ingest into RAG engine.
-    Returns status message.
-    """
+    """Handle uploaded file: ingest into RAG engine."""
     if file is None:
         return "No file uploaded."
     try:
-        filepath = file.name if hasattr(file, 'name') else file
+        filepath = file.name if hasattr(file, "name") else file
         rag_engine.ingest_document(filepath)
-        return f"Successfully ingested: {os.path.basename(filepath)}"
+        stats = rag_engine.get_stats()
+        return (
+            f"✅ Successfully ingested: {os.path.basename(filepath)}\n"
+            f"📊 Total chunks in index: {stats['total_chunks']} | "
+            f"Sources: {stats['unique_sources']}"
+        )
     except Exception as e:
-        return f"Error ingesting file: {e}"
+        return f"❌ Error ingesting file: {e}"
+
 
 def ingest_url(url):
-    """
-    Handle URL input: scrape and ingest.
-    """
+    """Handle URL input: scrape and ingest."""
     if not url or not url.strip():
         return "Please enter a URL."
     try:
         rag_engine.ingest_url(url.strip())
-        return f"Successfully ingested URL: {url}"
+        stats = rag_engine.get_stats()
+        return (
+            f"✅ Successfully ingested URL: {url}\n"
+            f"📊 Total chunks in index: {stats['total_chunks']} | "
+            f"Sources: {stats['unique_sources']}"
+        )
     except Exception as e:
-        return f"Error ingesting URL: {e}"
+        return f"❌ Error ingesting URL: {e}"
+
 
 def chat_function(message, history):
-    """
-    Gradio chatbot function: takes user message and history, returns response.
-    """
+    """Generate a RAG-powered response with sources and images."""
     try:
         chunks = rag_engine.query(message, top_k=3)
         if not chunks:
-            return "I don't have enough information to answer that question. Please upload some documents or scrape a URL first."
+            return (
+                "I don't have enough information to answer that question. "
+                "Please upload some documents or scrape a URL first."
+            )
+
         answer = rag_engine.generate_answer(message, chunks)
-        sources_info = "\n\n**Sources:**\n"
+
+        # Build sources section
+        sources_info = "\n\n---\n**📚 Sources used:**\n"
         for i, chunk in enumerate(chunks, 1):
-            source = chunk.get('source', 'unknown')
-            if len(source) > 50:
-                source = source[:47] + "..."
-            sources_info += f"{i}. {source} (similarity: {chunk.get('score', 'N/A'):.4f})\n"
-        return answer + sources_info
+            source = chunk.get("source", "unknown")
+            score = chunk.get("score", None)
+            score_str = f" (distance: {score:.4f})" if score is not None else ""
+            sources_info += f"- **Source {i}:** {source}{score_str}\n"
+
+        # Collect image URLs from retrieved chunks
+        all_images = []
+        for chunk in chunks:
+            images = chunk.get("images", [])
+            for img_url in images:
+                if img_url not in all_images:
+                    all_images.append(img_url)
+
+        # Add images to response (show up to 3 relevant images)
+        images_section = ""
+        if all_images:
+            images_section = "\n\n**🖼️ Related images:**\n"
+            for img_url in all_images[:3]:
+                images_section += f"![Image]({img_url})\n"
+
+        return answer + sources_info + images_section
+
     except Exception as e:
-        return f"Error: {e}"
+        return f"❌ Error: {e}"
 
-def clear_chat():
-    return None, None
 
-# Build Gradio interface
-with gr.Blocks(title="College RAG Chatbot") as demo:
-    gr.Markdown("# 🎓 College RAG Chatbot")
-    gr.Markdown("Upload college documents (PDF, DOCX, TXT) or scrape public college websites to build a knowledge base, then ask questions!")
+def get_index_info():
+    """Get current index statistics."""
+    stats = rag_engine.get_stats()
+    if stats["total_chunks"] == 0:
+        return "📭 Index is empty. Upload documents or scrape URLs to get started!"
 
-    with gr.Tab("Ingest Data"):
-        with gr.Row():
-            with gr.Column():
-                file_input = gr.File(label="Upload Document (PDF, DOCX, TXT)", file_types=[".pdf", ".docx", ".txt"])
-                ingest_file_btn = gr.Button("Ingest Uploaded File")
-                file_status = gr.Textbox(label="Status", interactive=False)
-            with gr.Column():
-                url_input = gr.Textbox(label="Enter College Website URL", placeholder="https://example.edu/info")
-                ingest_url_btn = gr.Button("Ingest URL")
-                url_status = gr.Textbox(label="Status", interactive=False)
+    sources_list = "\n".join(f"  • {s}" for s in stats["sources"])
+    return (
+        f"📊 **Index Statistics:**\n"
+        f"- Total chunks: **{stats['total_chunks']}**\n"
+        f"- Unique sources: **{stats['unique_sources']}**\n"
+        f"- Sources:\n{sources_list}"
+    )
 
-        ingest_file_btn.click(ingest_file, inputs=file_input, outputs=file_status)
-        ingest_url_btn.click(ingest_url, inputs=url_input, outputs=url_status)
 
-    with gr.Tab("Chat"):
+def clear_index():
+    """Clear the entire RAG index."""
+    rag_engine.clear_index()
+    return "🗑️ Index cleared. Upload new documents or scrape URLs to rebuild."
+
+
+# ═══════════════════════════════════════════════════════
+#  GRADIO UI
+# ═══════════════════════════════════════════════════════
+
+with gr.Blocks(
+    title="🎓 NMIT College RAG Chatbot",
+    theme=gr.themes.Soft(),
+) as demo:
+
+    gr.Markdown("# 🎓 NMIT College RAG Chatbot")
+    gr.Markdown(
+        "Upload college documents (PDF, DOCX, TXT, CSV) or scrape public college "
+        "websites to build a knowledge base, then ask questions! "
+        "Powered by **Groq AI** + **FAISS** + **LangChain**."
+    )
+
+    with gr.Tab("💬 Chat"):
         gr.Markdown("### Ask questions about your college data")
-        chatbot = gr.Chatbot(label="Conversation", height=400)
+        chatbot = gr.Chatbot(label="Conversation", height=450)
         with gr.Row():
-            msg = gr.Textbox(label="Your Question", placeholder="Ask about courses, placements, facilities...", lines=2, scale=4)
+            msg = gr.Textbox(
+                label="Your Question",
+                placeholder="Ask about courses, placements, facilities, admissions...",
+                lines=2,
+                scale=4,
+            )
             submit_btn = gr.Button("Send", variant="primary", scale=1)
         with gr.Row():
-            clear_btn = gr.Button("Clear Chat", variant="secondary")
+            clear_btn = gr.Button("🗑️ Clear Chat", variant="secondary")
+
         gr.Markdown(
-            "**Try asking:** *What courses are offered?* · *What are the placement stats?* "
-            "· *Tell me about hostel facilities* · *What is the admission process?*"
+            "**Try asking:** *What courses does NMIT offer?* · "
+            "*What are the placement statistics?* · "
+            "*Tell me about hostel facilities* · "
+            "*What is the admission process?*"
         )
 
-        # Handle submission
         def respond(message, chat_history):
             if not message or not message.strip():
                 return "", chat_history
             bot_message = chat_function(message, chat_history)
+            chat_history = chat_history or []
             chat_history.append({"role": "user", "content": message})
             chat_history.append({"role": "assistant", "content": bot_message})
             return "", chat_history
@@ -115,24 +172,65 @@ with gr.Blocks(title="College RAG Chatbot") as demo:
         msg.submit(respond, inputs=[msg, chatbot], outputs=[msg, chatbot])
         clear_btn.click(lambda: [], None, chatbot, queue=False)
 
-    with gr.Tab("About"):
+    with gr.Tab("📥 Ingest Data"):
+        gr.Markdown("### Add knowledge to the chatbot")
+        with gr.Row():
+            with gr.Column():
+                gr.Markdown("#### 📄 Upload Document")
+                file_input = gr.File(
+                    label="Upload Document (PDF, DOCX, TXT, CSV)",
+                    file_types=[".pdf", ".docx", ".txt", ".csv"],
+                )
+                ingest_file_btn = gr.Button("Ingest Uploaded File", variant="primary")
+                file_status = gr.Textbox(label="Status", interactive=False, lines=2)
+            with gr.Column():
+                gr.Markdown("#### 🌐 Scrape Website")
+                url_input = gr.Textbox(
+                    label="Enter College Website URL",
+                    placeholder="https://nitte.edu.in/nmit/about-nmit-bangalore.php",
+                )
+                ingest_url_btn = gr.Button("Ingest URL", variant="primary")
+                url_status = gr.Textbox(label="Status", interactive=False, lines=2)
+
+        ingest_file_btn.click(ingest_file, inputs=file_input, outputs=file_status)
+        ingest_url_btn.click(ingest_url, inputs=url_input, outputs=url_status)
+
+        gr.Markdown("---")
+        gr.Markdown("#### 📊 Index Status")
+        index_info = gr.Textbox(label="Current Index", interactive=False, lines=5)
+        with gr.Row():
+            refresh_btn = gr.Button("🔄 Refresh Stats")
+            clear_index_btn = gr.Button("🗑️ Clear Index", variant="stop")
+
+        refresh_btn.click(get_index_info, outputs=index_info)
+        clear_index_btn.click(clear_index, outputs=index_info)
+
+    with gr.Tab("ℹ️ About"):
         gr.Markdown("""
         ## How it works
         1. **Ingest**: Upload documents or provide URLs to college websites.
-        2. **Process**: Text is extracted, chunked, and embedded using sentence-transformers.
-        3. **Store**: Chunks are saved in ChromaDB vector database.
-        4. **Query**: When you ask a question, the system retrieves relevant chunks.
-        5. **Answer**: The retrieved context is sent to a Hugging Face LLM (Qwen-2.5-7B-Instruct) to generate a grounded answer.
-        6. **Cite**: The answer is based solely on the uploaded/scraped content.
+        2. **Process**: Text is extracted and chunked using LangChain's RecursiveCharacterTextSplitter.
+        3. **Embed**: Chunks are embedded using `sentence-transformers/all-MiniLM-L6-v2`.
+        4. **Store**: Embeddings are stored in a FAISS vector index for fast similarity search.
+        5. **Query**: When you ask a question, the system retrieves the most relevant chunks.
+        6. **Answer**: The retrieved context is sent to **Groq AI** (gemma2-9b-it) to generate a grounded answer.
+        7. **Cite**: The answer references specific sources and may include related images.
 
-        **Tech Stack**
-        - LLM: Hugging Face Inference API (Qwen/Qwen2.5-7B-Instruct)
-        - Embeddings: sentence-transformers/all-MiniLM-L6-v2
-        - Vector Store: ChromaDB (local persistence)
-        - UI: Gradio
-        - File Parsing: PyPDF2, python-docx
-        - Web Scraping: BeautifulSoup4, requests
+        ## Tech Stack
+        | Component | Technology |
+        |-----------|------------|
+        | **LLM** | Groq API (qwen/qwen3.6-27b) |
+        | **Embeddings** | sentence-transformers/all-MiniLM-L6-v2 |
+        | **Vector Store** | FAISS (Facebook AI Similarity Search) |
+        | **Chunking** | LangChain RecursiveCharacterTextSplitter |
+        | **Document Parsing** | LangChain loaders (PDF, DOCX, TXT, CSV) |
+        | **Web Scraping** | BeautifulSoup4 + requests |
+        | **UI** | Gradio |
+
+        ## Built by
+        Rohit S — NMIT Bangalore | Resume Portfolio Project
         """)
+
 
 if __name__ == "__main__":
     demo.launch(ssr_mode=False)

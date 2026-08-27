@@ -3,20 +3,22 @@ web_scraper.py — Smart web scraper for the College RAG Chatbot.
 
 Owner: Opus (Antigravity)
 Handles: Fetching college website pages, extracting clean content text,
-         stripping navigation/header/footer boilerplate, and producing chunks.
+         stripping navigation/header/footer boilerplate, extracting images,
+         and producing chunks.
 
 Designed specifically for college websites like nitte.edu.in/nmit/ which have
 heavy navigation menus that would pollute the knowledge base if not filtered.
 
 Integration contract:
   - scrape_url(url) → str                  (returns clean text)
-  - scrape_and_chunk(url, ...) → List[Dict] (returns chunked dicts)
+  - scrape_and_chunk(url, ...) → List[Dict] (returns chunked dicts with images)
   - scrape_multiple_urls(urls) → List[Dict] (batch scrape + chunk)
+  - extract_images(url) → List[str]        (returns image URLs from page)
 """
 
 import re
 import time
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Tuple
 from urllib.parse import urlparse, urljoin
 
 import requests
@@ -49,13 +51,16 @@ NOISE_ELEMENTS = [
 ]
 
 # Common CSS class/id patterns for navigation and boilerplate
-# These get stripped to avoid indexing menu items as content
 NOISE_PATTERNS = [
     r"nav", r"menu", r"sidebar", r"footer", r"header",
     r"breadcrumb", r"social", r"share", r"cookie",
     r"popup", r"modal", r"banner", r"advertisement",
     r"quick-link", r"quicklink", r"top-bar", r"topbar",
 ]
+
+# Minimum image dimensions to consider (skip icons/tracking pixels)
+MIN_IMAGE_WIDTH = 80
+MIN_IMAGE_HEIGHT = 80
 
 
 # ═══════════════════════════════════════════════════════
@@ -115,35 +120,123 @@ def scrape_url(url: str, timeout: int = 15) -> str:
         return ""
 
 
+def extract_images(url: str, timeout: int = 15) -> List[str]:
+    """
+    Extract meaningful image URLs from a web page.
+
+    Filters out tiny icons, tracking pixels, and data URIs.
+    Returns absolute URLs only.
+
+    Args:
+        url:     The URL to scrape for images.
+        timeout: Request timeout in seconds.
+
+    Returns:
+        List of absolute image URLs.
+    """
+    try:
+        resp = requests.get(url, headers=DEFAULT_HEADERS, timeout=timeout)
+        resp.raise_for_status()
+        resp.encoding = resp.apparent_encoding or "utf-8"
+
+        soup = BeautifulSoup(resp.text, "html.parser")
+        images = []
+        seen = set()
+
+        for img in soup.find_all("img"):
+            src = img.get("src", "").strip()
+            if not src or src.startswith("data:"):
+                continue
+
+            # Convert to absolute URL
+            abs_url = urljoin(url, src)
+
+            # Skip duplicates
+            if abs_url in seen:
+                continue
+            seen.add(abs_url)
+
+            # Filter by size attributes if available
+            width = _parse_dimension(img.get("width"))
+            height = _parse_dimension(img.get("height"))
+
+            if width and width < MIN_IMAGE_WIDTH:
+                continue
+            if height and height < MIN_IMAGE_HEIGHT:
+                continue
+
+            # Skip common icon/logo patterns in the filename
+            lower_src = abs_url.lower()
+            skip_patterns = [
+                "icon", "favicon", "logo", "sprite",
+                "tracking", "pixel", "spacer", "blank",
+                ".gif",  # Most GIFs on college sites are spacers
+            ]
+            if any(pat in lower_src for pat in skip_patterns):
+                continue
+
+            # Only keep common image formats
+            if any(lower_src.endswith(ext) for ext in [".jpg", ".jpeg", ".png", ".webp", ".svg"]):
+                images.append(abs_url)
+
+        return images
+
+    except Exception as e:
+        print(f"[web_scraper] Error extracting images from {url}: {e}")
+        return []
+
+
+def scrape_url_with_images(url: str, timeout: int = 15) -> Tuple[str, List[str]]:
+    """
+    Scrape a URL and return both clean text and image URLs.
+
+    Args:
+        url:     The URL to scrape.
+        timeout: Request timeout in seconds.
+
+    Returns:
+        Tuple of (clean_text, image_urls).
+    """
+    text = scrape_url(url, timeout=timeout)
+    images = extract_images(url, timeout=timeout)
+    return text, images
+
+
 def scrape_and_chunk(
     url: str,
-    chunk_size: int = 500,
-    overlap: int = 50,
+    chunk_size: int = 1000,
+    overlap: int = 200,
 ) -> List[Dict[str, str]]:
     """
-    Scrape a URL and return chunked text with metadata.
+    Scrape a URL and return chunked text with metadata and images.
 
     Args:
         url:        The URL to scrape.
-        chunk_size: Words per chunk.
-        overlap:    Word overlap between chunks.
+        chunk_size: Characters per chunk.
+        overlap:    Character overlap between chunks.
 
     Returns:
-        List of chunk dicts with keys: text, source, chunk_id.
+        List of chunk dicts with keys: text, source, chunk_id, images.
     """
-    text = scrape_url(url)
+    text, images = scrape_url_with_images(url)
     if not text:
         return []
 
     # Use a clean source name (domain + path, no query params)
     source_name = _url_to_source_name(url)
-    return chunk_text(text, source_name=source_name, chunk_size=chunk_size, overlap=overlap)
+    return chunk_text(
+        text,
+        source_name=source_name,
+        chunk_size=chunk_size,
+        overlap=overlap,
+        images=images,
+    )
 
 
 def scrape_multiple_urls(
     urls: List[str],
-    chunk_size: int = 500,
-    overlap: int = 50,
+    chunk_size: int = 1000,
+    overlap: int = 200,
     delay: float = 1.0,
 ) -> List[Dict[str, str]]:
     """
@@ -153,8 +246,8 @@ def scrape_multiple_urls(
 
     Args:
         urls:       List of URLs to scrape.
-        chunk_size: Words per chunk.
-        overlap:    Word overlap between chunks.
+        chunk_size: Characters per chunk.
+        overlap:    Character overlap between chunks.
         delay:      Seconds to wait between requests.
 
     Returns:
@@ -210,6 +303,18 @@ def get_nmit_default_urls() -> List[str]:
 # ═══════════════════════════════════════════════════════
 #  INTERNAL HELPERS
 # ═══════════════════════════════════════════════════════
+
+def _parse_dimension(value) -> Optional[int]:
+    """Parse an HTML width/height attribute to an integer."""
+    if value is None:
+        return None
+    try:
+        # Remove 'px', '%' etc.
+        clean = re.sub(r"[^\d]", "", str(value))
+        return int(clean) if clean else None
+    except (ValueError, TypeError):
+        return None
+
 
 def _remove_noise_elements(soup: BeautifulSoup) -> None:
     """Remove HTML elements that never contain useful content."""
