@@ -1,5 +1,4 @@
-# Core UI
-gradio
+# NOTE: Do NOT include 'gradio' here — HF Spaces manages it via README.md sdk_version
 
 # LangChain ecosystem
 langchain
