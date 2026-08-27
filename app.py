@@ -3,10 +3,23 @@ import os
 os.environ["CUDA_VISIBLE_DEVICES"] = ""
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
+# Mock spaces if not present (for local runs or CPU environments)
 try:
     import spaces
-except Exception:
-    pass
+except ImportError:
+    class MockSpaces:
+        def GPU(self, func=None, **kwargs):
+            if func is not None:
+                return func
+            def decorator(f):
+                return f
+            return decorator
+    spaces = MockSpaces()
+
+@spaces.GPU
+def dummy_gpu_func():
+    """Dummy function to satisfy Hugging Face ZeroGPU startup requirements."""
+    return "GPU initialized"
 
 import gradio as gr
 
