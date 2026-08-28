@@ -190,34 +190,55 @@ class RagEngine:
         # --- 2. Keyword search (scan metadata) ---
         keyword_hits = self._keyword_search(question, top_k=top_k * 2)
 
-        # --- 3. Merge results (keyword hits get priority boost) ---
+        # --- 3. Merge results with proper hybrid scoring (avoids 0.0 flat score ties) ---
         scored = {}
-        # Add semantic results
-        for idx, dist in semantic_results.items():
-            scored[idx] = dist
+        
+        # Add all candidate indices from semantic and keyword search
+        all_indices = set(semantic_results.keys()).union(set(keyword_hits.keys()))
+        
+        for idx in all_indices:
+            sem_dist = semantic_results.get(idx, 1.0)  # Default distance 1.0 for keyword-only hits
+            kw_rel = keyword_hits.get(idx, 0.0)
+            
+            # Hybrid formula: divide distance by (1 + 1.5 * kw_rel)
+            # Higher keyword relevance reduces distance proportionally without flattening to 0.0
+            combined_score = sem_dist / (1.0 + 1.5 * kw_rel)
+            scored[idx] = combined_score
 
-        # Boost keyword-matched chunks (reduce their distance score)
-        for idx, kw_score in keyword_hits.items():
-            if idx in scored:
-                # Boost: reduce distance by keyword relevance (stronger match = bigger boost)
-                scored[idx] = scored[idx] * (1.0 - kw_score * 0.5)
-            else:
-                # Keyword-only hit: assign a moderate distance
-                scored[idx] = 0.8 * (1.0 - kw_score)
-
-        # --- 4. Sort by score (lower = better), deduplicate, return top_k ---
+        # --- 4. Sort by score (lower = better) with Source Diversity Filtering ---
         sorted_indices = sorted(scored.keys(), key=lambda i: scored[i])
 
         results = []
         seen_texts = set()
+        source_counts = {}
+        max_per_source = max(2, top_k // 2)
+
+        # Pass 1: Collect top results while enforcing max_per_source diversity
+        remaining_candidates = []
         for idx in sorted_indices:
             if 0 <= idx < len(self.metadata):
                 meta = self.metadata[idx].copy()
+                src = meta.get("source", "unknown")
                 text_fingerprint = meta.get("text", "")[:200].strip()
+                
                 if text_fingerprint in seen_texts:
                     continue
                 seen_texts.add(text_fingerprint)
                 meta["score"] = scored[idx]
+
+                # Source diversity check
+                curr_count = source_counts.get(src, 0)
+                if curr_count < max_per_source:
+                    source_counts[src] = curr_count + 1
+                    results.append(meta)
+                    if len(results) >= top_k:
+                        break
+                else:
+                    remaining_candidates.append(meta)
+
+        # Pass 2: If top_k not filled, fill remaining slots from remaining candidates
+        if len(results) < top_k and remaining_candidates:
+            for meta in remaining_candidates:
                 results.append(meta)
                 if len(results) >= top_k:
                     break

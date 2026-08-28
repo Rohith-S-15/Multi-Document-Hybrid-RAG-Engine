@@ -55,24 +55,48 @@ except Exception as e:
 #  TOP-LEVEL HANDLER FUNCTIONS (must be picklable for ZeroGPU)
 # ════════════════════════════════════════════════════════
 
-def ingest_file(file):
-    """Handle uploaded file: ingest into RAG engine."""
+def ingest_file(files):
+    """Handle uploaded file(s): ingest into RAG engine."""
     if rag_engine is None:
         return "❌ RAG engine not initialized. Check GROQ_API_KEY secret."
-    if file is None:
+    if not files:
         return "No file uploaded."
-    try:
-        filepath = file.name if hasattr(file, "name") else file
-        rag_engine.ingest_document(filepath)
-        stats = rag_engine.get_stats()
-        return (
-            f"✅ Successfully ingested: {os.path.basename(filepath)}\n"
-            f"📊 Total chunks in index: {stats['total_chunks']} | "
-            f"Sources: {stats['unique_sources']}"
+    
+    if not isinstance(files, list):
+        files = [files]
+
+    ingested_names = []
+    errors = []
+
+    for file in files:
+        try:
+            filepath = file.name if hasattr(file, "name") else file
+            filename = os.path.basename(filepath)
+            rag_engine.ingest_document(filepath)
+            ingested_names.append(filename)
+        except Exception as e:
+            filename = os.path.basename(file.name if hasattr(file, "name") else str(file))
+            errors.append(f"{filename}: {e}")
+
+    stats = rag_engine.get_stats()
+
+    status_parts = []
+    if ingested_names:
+        status_parts.append(
+            f"✅ Ingested {len(ingested_names)} file(s):\n" +
+            "\n".join(f"  • {name}" for name in ingested_names)
         )
-    except Exception as e:
-        print(f"[ERROR] Error ingesting file: {e}")
-        return f"❌ Error ingesting file: {e}"
+    if errors:
+        status_parts.append(
+            f"❌ Failed to ingest:\n" +
+            "\n".join(f"  • {err}" for err in errors)
+        )
+
+    status_parts.append(
+        f"📊 Total chunks in index: {stats['total_chunks']} | "
+        f"Unique sources: {stats['unique_sources']}"
+    )
+    return "\n\n".join(status_parts)
 
 
 def ingest_url(url):
@@ -99,7 +123,7 @@ def chat_function(message, history):
     if rag_engine is None:
         return "❌ RAG engine not initialized. Check GROQ_API_KEY secret."
     try:
-        chunks = rag_engine.query(message, top_k=5)
+        chunks = rag_engine.query(message, top_k=8)
         if not chunks:
             return (
                 "I don't have enough information to answer that question. "
@@ -224,8 +248,9 @@ with demo:
             with gr.Column():
                 gr.Markdown("#### 📄 Upload Document")
                 file_input = gr.File(
-                    label="Upload Document (PDF, DOCX, TXT, CSV)",
+                    label="Upload Document(s) (PDF, DOCX, TXT, CSV)",
                     file_types=[".pdf", ".docx", ".txt", ".csv"],
+                    file_count="multiple",
                 )
                 ingest_file_btn = gr.Button("Ingest Uploaded File", variant="primary")
                 file_status = gr.Textbox(label="Status", interactive=False, lines=2)
