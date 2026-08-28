@@ -159,7 +159,7 @@ class RagEngine:
     def query(self, question: str, top_k: int = 8) -> List[Dict]:
         """
         Hybrid retrieval: combines FAISS semantic search, source filename matching,
-        and automatic header chunk (Chunk 0) inclusion.
+        and query-conditioned header chunk (Chunk 0) inclusion.
 
         Args:
             question: The user's question.
@@ -199,25 +199,26 @@ class RagEngine:
             combined_score = sem_dist / (1.0 + 2.5 * kw_rel)
             scored[idx] = combined_score
 
-        # --- 4. Sort and apply Header (Chunk 0) Auto-Inclusion ---
+        # --- 4. Sort candidates by score ---
         sorted_indices = sorted(scored.keys(), key=lambda i: scored[i])
 
-        # Identify top matched sources
-        matched_sources = set()
-        for idx in sorted_indices[:top_k]:
-            if 0 <= idx < len(self.metadata):
-                matched_sources.add(self.metadata[idx].get("source", ""))
+        # Check if question specifically asks for document identity / author / candidate name
+        q_lower = question.lower()
+        identity_terms = ["name", "who", "author", "title", "candidate", "full name", "person", "written by"]
+        is_identity_query = any(term in q_lower for term in identity_terms)
 
-        # Ensure Chunk 0 (header/title/author chunk) of every matched document is included
-        header_indices = set()
-        for i, meta in enumerate(self.metadata):
-            src = meta.get("source", "")
-            chunk_id = str(meta.get("chunk_id", ""))
-            if src in matched_sources and (chunk_id.endswith("_0") or chunk_id == "0"):
-                header_indices.add(i)
-
-        # Combine header indices first, followed by score-ranked candidates
-        final_candidates = list(header_indices) + [i for i in sorted_indices if i not in header_indices]
+        final_candidates = list(sorted_indices)
+        if is_identity_query:
+            # For identity/name questions, prepend Chunk 0 (header/title) of top matched sources
+            top_sources = set(self.metadata[i].get("source", "") for i in sorted_indices[:top_k] if i < len(self.metadata))
+            header_indices = []
+            for i, meta in enumerate(self.metadata):
+                src = meta.get("source", "")
+                chunk_id = str(meta.get("chunk_id", ""))
+                if src in top_sources and (chunk_id.endswith("_0") or chunk_id == "0"):
+                    header_indices.append(i)
+            # Prepend header chunks ahead of body chunks
+            final_candidates = header_indices + [i for i in sorted_indices if i not in header_indices]
 
         results = []
         seen_texts = set()
