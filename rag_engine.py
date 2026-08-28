@@ -153,16 +153,20 @@ class RagEngine:
         print(f"[RAG] Added {len(chunks)} chunks. Total: {self.index.ntotal}")
 
     # ═══════════════════════════════════════════════════
-    #  QUERY / RETRIEVAL
+    #  QUERY / RETRIEVAL (Hybrid: Semantic + Keyword)
     # ═══════════════════════════════════════════════════
 
-    def query(self, question: str, top_k: int = 3) -> List[Dict]:
+    def query(self, question: str, top_k: int = 7) -> List[Dict]:
         """
-        Retrieve the most relevant chunks for a question.
+        Hybrid retrieval: combines FAISS semantic search with keyword matching.
+
+        Structured documents (syllabi, tables) often have poor semantic
+        similarity but contain exact keywords. This method merges both
+        approaches for much better recall.
 
         Args:
             question: The user's question.
-            top_k: Number of results to return.
+            top_k: Number of unique results to return.
 
         Returns:
             List of dicts with keys: text, source, chunk_id, score, images.
@@ -170,23 +174,120 @@ class RagEngine:
         if self.index is None or self.index.ntotal == 0:
             return []
 
-        # Embed the query
+        # --- 1. Semantic search (FAISS) ---
         q_emb = self.embedding_model.encode(
             [question], convert_to_numpy=True
         ).astype("float32")
 
-        # Search FAISS (returns distances and indices)
-        k = min(top_k, self.index.ntotal)
-        distances, indices = self.index.search(q_emb, k)
+        fetch_k = min(top_k * 4, self.index.ntotal)
+        distances, indices = self.index.search(q_emb, fetch_k)
 
-        results = []
+        semantic_results = {}
         for idx, dist in zip(indices[0], distances[0]):
             if 0 <= idx < len(self.metadata):
+                semantic_results[idx] = float(dist)
+
+        # --- 2. Keyword search (scan metadata) ---
+        keyword_hits = self._keyword_search(question, top_k=top_k * 2)
+
+        # --- 3. Merge results (keyword hits get priority boost) ---
+        scored = {}
+        # Add semantic results
+        for idx, dist in semantic_results.items():
+            scored[idx] = dist
+
+        # Boost keyword-matched chunks (reduce their distance score)
+        for idx, kw_score in keyword_hits.items():
+            if idx in scored:
+                # Boost: reduce distance by keyword relevance (stronger match = bigger boost)
+                scored[idx] = scored[idx] * (1.0 - kw_score * 0.5)
+            else:
+                # Keyword-only hit: assign a moderate distance
+                scored[idx] = 0.8 * (1.0 - kw_score)
+
+        # --- 4. Sort by score (lower = better), deduplicate, return top_k ---
+        sorted_indices = sorted(scored.keys(), key=lambda i: scored[i])
+
+        results = []
+        seen_texts = set()
+        for idx in sorted_indices:
+            if 0 <= idx < len(self.metadata):
                 meta = self.metadata[idx].copy()
-                meta["score"] = float(dist)
+                text_fingerprint = meta.get("text", "")[:200].strip()
+                if text_fingerprint in seen_texts:
+                    continue
+                seen_texts.add(text_fingerprint)
+                meta["score"] = scored[idx]
                 results.append(meta)
+                if len(results) >= top_k:
+                    break
 
         return results
+
+    def _keyword_search(self, question: str, top_k: int = 14) -> Dict[int, float]:
+        """
+        Simple keyword matching against chunk text.
+        Returns dict of {chunk_index: relevance_score (0-1)}.
+        """
+        import re as _re
+
+        # Extract meaningful keywords from the question (skip stopwords)
+        stopwords = {
+            "i", "me", "my", "we", "our", "you", "your", "the", "a", "an",
+            "is", "are", "was", "were", "be", "been", "being", "have", "has",
+            "had", "do", "does", "did", "will", "would", "could", "should",
+            "shall", "can", "may", "might", "am", "it", "its", "this", "that",
+            "these", "those", "in", "on", "at", "to", "for", "of", "with",
+            "from", "by", "as", "into", "about", "between", "through",
+            "and", "or", "but", "not", "no", "if", "then", "so", "than",
+            "what", "which", "who", "whom", "how", "when", "where", "why",
+            "all", "each", "every", "any", "some", "gonna", "going", "take",
+            "up", "get", "tell", "give", "also", "very", "just",
+        }
+        words = _re.findall(r'\b[a-zA-Z0-9]+\b', question.lower())
+        keywords = [w for w in words if w not in stopwords and len(w) > 1]
+
+        if not keywords:
+            return {}
+
+        # Also extract multi-word phrases for better matching
+        q_lower = question.lower()
+        phrases = []
+        phrase_patterns = [
+            "program elective", "programme elective", "open elective",
+            "5th sem", "5th semester", "semester v", "semester 5",
+            "6th sem", "7th sem", "8th sem", "3rd sem", "4th sem",
+            "semester vi", "semester vii", "semester viii",
+            "semester iii", "semester iv", "semester i", "semester ii",
+            "data science", "machine learning", "artificial intelligence",
+            "web development", "full stack", "cloud computing",
+        ]
+        for phrase in phrase_patterns:
+            if phrase in q_lower:
+                phrases.append(phrase)
+
+        # Score each chunk
+        hits = {}
+        for i, meta in enumerate(self.metadata):
+            text_lower = meta.get("text", "").lower()
+            if not text_lower:
+                continue
+
+            # Keyword hit ratio
+            kw_hits = sum(1 for kw in keywords if kw in text_lower)
+            kw_score = kw_hits / len(keywords) if keywords else 0
+
+            # Phrase bonus (strong signal)
+            phrase_bonus = sum(0.3 for p in phrases if p in text_lower)
+
+            total_score = min(kw_score + phrase_bonus, 1.0)
+            if total_score > 0.2:  # Minimum threshold
+                hits[i] = total_score
+
+        # Return top matches
+        sorted_hits = sorted(hits.items(), key=lambda x: -x[1])[:top_k]
+        return dict(sorted_hits)
+
 
     # ═══════════════════════════════════════════════════
     #  ANSWER GENERATION (Groq LLM)
@@ -214,17 +315,29 @@ class RagEngine:
             context_parts.append(f"[Source {i + 1}: {source}]\n{text}")
         context = "\n\n".join(context_parts)
 
-        # System prompt for grounded answers
+        # System prompt — comprehensive, helpful, and smart
         system_prompt = (
-            "You are an official NMIT College AI Assistant. "
-            "Answer the user's question accurately based ONLY on the provided context.\n"
-            "If the answer cannot be determined from the context, state clearly: "
-            "'I don't have this information in the ingested college documents.'\n"
-            "Format your answer clearly with bullet points if helpful, "
-            "and reference the source numbers used."
+            "You are an expert NMIT College AI Assistant with deep knowledge extraction skills.\n\n"
+            "INSTRUCTIONS:\n"
+            "1. Carefully read ALL the provided context chunks. The answer is very likely "
+            "somewhere in the text — look for tables, lists, course codes, subject names, "
+            "semester numbers, and any structured data.\n"
+            "2. College documents often contain tables extracted as plain text. Rows may be "
+            "split across lines. Course codes look like '22ISE561'. Pay attention to these patterns.\n"
+            "3. Answer the question as COMPLETELY and HELPFULLY as possible. Use bullet points, "
+            "tables, and clear formatting.\n"
+            "4. If you find partial information, share what you found and mention what's missing.\n"
+            "5. ONLY say you don't have information if you genuinely cannot find ANYTHING relevant "
+            "in any of the context chunks.\n"
+            "6. Reference which source numbers you used."
         )
 
-        user_prompt = f"Context:\n{context}\n\nQuestion: {question}"
+        user_prompt = (
+            f"CONTEXT (from ingested documents — read carefully, information may be in tables or lists):\n\n"
+            f"{context}\n\n"
+            f"QUESTION: {question}\n\n"
+            f"Provide a thorough, well-formatted answer:"
+        )
 
         try:
             response = self.llm.invoke([

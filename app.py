@@ -32,21 +32,21 @@ except ImportError:
 from rag_engine import RagEngine
 
 # Initialize RAG engine (reads GROQ_API_KEY from environment)
-rag_engine = RagEngine()
-
-
-# Dummy GPU function — satisfies ZeroGPU startup requirement
-@spaces.GPU
-def _gpu_init():
-    return True
+try:
+    rag_engine = RagEngine()
+except Exception as e:
+    print(f"[ERROR] Failed to initialize RAG engine: {e}")
+    rag_engine = None
 
 
 # ════════════════════════════════════════════════════════
-#  TOP-LEVEL HANDLER FUNCTIONS (must be picklable)
+#  TOP-LEVEL HANDLER FUNCTIONS (must be picklable for ZeroGPU)
 # ════════════════════════════════════════════════════════
 
 def ingest_file(file):
     """Handle uploaded file: ingest into RAG engine."""
+    if rag_engine is None:
+        return "❌ RAG engine not initialized. Check GROQ_API_KEY secret."
     if file is None:
         return "No file uploaded."
     try:
@@ -59,11 +59,14 @@ def ingest_file(file):
             f"Sources: {stats['unique_sources']}"
         )
     except Exception as e:
+        print(f"[ERROR] Error ingesting file: {e}")
         return f"❌ Error ingesting file: {e}"
 
 
 def ingest_url(url):
     """Handle URL input: scrape and ingest."""
+    if rag_engine is None:
+        return "❌ RAG engine not initialized. Check GROQ_API_KEY secret."
     if not url or not url.strip():
         return "Please enter a URL."
     try:
@@ -75,13 +78,16 @@ def ingest_url(url):
             f"Sources: {stats['unique_sources']}"
         )
     except Exception as e:
+        print(f"[ERROR] Error ingesting URL: {e}")
         return f"❌ Error ingesting URL: {e}"
 
 
 def chat_function(message, history):
     """Generate a RAG-powered response with sources and images."""
+    if rag_engine is None:
+        return "❌ RAG engine not initialized. Check GROQ_API_KEY secret."
     try:
-        chunks = rag_engine.query(message, top_k=3)
+        chunks = rag_engine.query(message, top_k=5)
         if not chunks:
             return (
                 "I don't have enough information to answer that question. "
@@ -116,11 +122,14 @@ def chat_function(message, history):
         return answer + sources_info + images_section
 
     except Exception as e:
+        print(f"[ERROR] Error in chat function: {e}")
         return f"❌ Error: {e}"
 
 
 def get_index_info():
     """Get current index statistics."""
+    if rag_engine is None:
+        return "❌ RAG engine not initialized. Check GROQ_API_KEY secret."
     stats = rag_engine.get_stats()
     if stats["total_chunks"] == 0:
         return "📭 Index is empty. Upload documents or scrape URLs to get started!"
@@ -136,6 +145,8 @@ def get_index_info():
 
 def clear_index():
     """Clear the entire RAG index."""
+    if rag_engine is None:
+        return "❌ RAG engine not initialized. Check GROQ_API_KEY secret."
     rag_engine.clear_index()
     return "🗑️ Index cleared. Upload new documents or scrape URLs to rebuild."
 
@@ -238,7 +249,6 @@ with demo:
         5. **Query**: When you ask a question, the system retrieves the most relevant chunks.
         6. **Answer**: The retrieved context is sent to **Groq AI** (qwen/qwen3.6-27b) to generate a grounded answer.
         7. **Cite**: The answer references specific sources and may include related images.
-
         ## Tech Stack
         | Component | Technology |
         |-----------|------------|
@@ -249,10 +259,15 @@ with demo:
         | **Document Parsing** | LangChain loaders (PDF, DOCX, TXT, CSV) |
         | **Web Scraping** | BeautifulSoup4 + requests |
         | **UI** | Gradio |
-
         ## Built by
         Rohit S — NMIT Bangalore | Resume Portfolio Project
         """)
 
 
-demo.launch(ssr_mode=False)
+# Launch the app - this must be at module level for ZeroGPU
+if __name__ == "__main__":
+    demo.launch(ssr_mode=False)
+else:
+    # For Hugging Face Spaces - the app is imported, so we need to expose the demo variable
+    # The spaces framework will look for a 'demo' or 'app' variable at module level
+    pass

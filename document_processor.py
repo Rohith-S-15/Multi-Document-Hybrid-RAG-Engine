@@ -126,8 +126,8 @@ def _clean_text(text: str) -> str:
 def chunk_text(
     text: str,
     source_name: str,
-    chunk_size: int = 1000,
-    overlap: int = 200,
+    chunk_size: int = 500,
+    overlap: int = 100,
     images: List[str] = None,
 ) -> List[Dict[str, str]]:
     """
