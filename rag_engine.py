@@ -156,13 +156,10 @@ class RagEngine:
     #  QUERY / RETRIEVAL (Hybrid: Semantic + Keyword)
     # ═══════════════════════════════════════════════════
 
-    def query(self, question: str, top_k: int = 7) -> List[Dict]:
+    def query(self, question: str, top_k: int = 8) -> List[Dict]:
         """
-        Hybrid retrieval: combines FAISS semantic search with keyword matching.
-
-        Structured documents (syllabi, tables) often have poor semantic
-        similarity but contain exact keywords. This method merges both
-        approaches for much better recall.
+        Hybrid retrieval: combines FAISS semantic search, source filename matching,
+        and automatic header chunk (Chunk 0) inclusion.
 
         Args:
             question: The user's question.
@@ -187,67 +184,69 @@ class RagEngine:
             if 0 <= idx < len(self.metadata):
                 semantic_results[idx] = float(dist)
 
-        # --- 2. Keyword search (scan metadata) ---
-        keyword_hits = self._keyword_search(question, top_k=top_k * 2)
+        # --- 2. Source-Aware Keyword search (scan text + source filename) ---
+        keyword_hits = self._keyword_search(question, top_k=top_k * 3)
 
-        # --- 3. Merge results with proper hybrid scoring (avoids 0.0 flat score ties) ---
+        # --- 3. Combined score formula ---
         scored = {}
-        
-        # Add all candidate indices from semantic and keyword search
         all_indices = set(semantic_results.keys()).union(set(keyword_hits.keys()))
-        
+
         for idx in all_indices:
-            sem_dist = semantic_results.get(idx, 1.0)  # Default distance 1.0 for keyword-only hits
+            sem_dist = semantic_results.get(idx, 1.0)
             kw_rel = keyword_hits.get(idx, 0.0)
-            
-            # Hybrid formula: divide distance by (1 + 1.5 * kw_rel)
-            # Higher keyword relevance reduces distance proportionally without flattening to 0.0
-            combined_score = sem_dist / (1.0 + 1.5 * kw_rel)
+
+            # Boost formula: higher keyword relevance strongly reduces distance
+            combined_score = sem_dist / (1.0 + 2.5 * kw_rel)
             scored[idx] = combined_score
 
-        # --- 4. Sort by score (lower = better) with Source Diversity Filtering ---
+        # --- 4. Sort and apply Header (Chunk 0) Auto-Inclusion ---
         sorted_indices = sorted(scored.keys(), key=lambda i: scored[i])
+
+        # Identify top matched sources
+        matched_sources = set()
+        for idx in sorted_indices[:top_k]:
+            if 0 <= idx < len(self.metadata):
+                matched_sources.add(self.metadata[idx].get("source", ""))
+
+        # Ensure Chunk 0 (header/title/author chunk) of every matched document is included
+        header_indices = set()
+        for i, meta in enumerate(self.metadata):
+            src = meta.get("source", "")
+            chunk_id = str(meta.get("chunk_id", ""))
+            if src in matched_sources and (chunk_id.endswith("_0") or chunk_id == "0"):
+                header_indices.add(i)
+
+        # Combine header indices first, followed by score-ranked candidates
+        final_candidates = list(header_indices) + [i for i in sorted_indices if i not in header_indices]
 
         results = []
         seen_texts = set()
         source_counts = {}
-        max_per_source = max(2, top_k // 2)
+        max_per_source = max(3, top_k // 2)
 
-        # Pass 1: Collect top results while enforcing max_per_source diversity
-        remaining_candidates = []
-        for idx in sorted_indices:
+        for idx in final_candidates:
             if 0 <= idx < len(self.metadata):
                 meta = self.metadata[idx].copy()
                 src = meta.get("source", "unknown")
-                text_fingerprint = meta.get("text", "")[:200].strip()
-                
+                text_fingerprint = meta.get("text", "")[:150].strip()
+
                 if text_fingerprint in seen_texts:
                     continue
                 seen_texts.add(text_fingerprint)
-                meta["score"] = scored[idx]
+                meta["score"] = scored.get(idx, 0.5)
 
-                # Source diversity check
                 curr_count = source_counts.get(src, 0)
-                if curr_count < max_per_source:
+                if curr_count < max_per_source or len(results) < top_k:
                     source_counts[src] = curr_count + 1
                     results.append(meta)
                     if len(results) >= top_k:
                         break
-                else:
-                    remaining_candidates.append(meta)
-
-        # Pass 2: If top_k not filled, fill remaining slots from remaining candidates
-        if len(results) < top_k and remaining_candidates:
-            for meta in remaining_candidates:
-                results.append(meta)
-                if len(results) >= top_k:
-                    break
 
         return results
 
     def _keyword_search(self, question: str, top_k: int = 14) -> Dict[int, float]:
         """
-        Simple keyword matching against chunk text.
+        Keyword matching against chunk text and source filename.
         Returns dict of {chunk_index: relevance_score (0-1)}.
         """
         import re as _re
@@ -263,7 +262,7 @@ class RagEngine:
             "and", "or", "but", "not", "no", "if", "then", "so", "than",
             "what", "which", "who", "whom", "how", "when", "where", "why",
             "all", "each", "every", "any", "some", "gonna", "going", "take",
-            "up", "get", "tell", "give", "also", "very", "just",
+            "up", "get", "tell", "give", "also", "very", "just", "guy", "person",
         }
         words = _re.findall(r'\b[a-zA-Z0-9]+\b', question.lower())
         keywords = [w for w in words if w not in stopwords and len(w) > 1]
@@ -282,6 +281,7 @@ class RagEngine:
             "semester iii", "semester iv", "semester i", "semester ii",
             "data science", "machine learning", "artificial intelligence",
             "web development", "full stack", "cloud computing",
+            "full name", "projects listed", "projects",
         ]
         for phrase in phrase_patterns:
             if phrase in q_lower:
@@ -291,18 +291,25 @@ class RagEngine:
         hits = {}
         for i, meta in enumerate(self.metadata):
             text_lower = meta.get("text", "").lower()
+            source_lower = meta.get("source", "").lower()
             if not text_lower:
                 continue
 
+            # Combine source filename and text for keyword matching
+            combined_target = f"{source_lower} {source_lower} {text_lower}"
+
             # Keyword hit ratio
-            kw_hits = sum(1 for kw in keywords if kw in text_lower)
+            kw_hits = sum(1 for kw in keywords if kw in combined_target)
             kw_score = kw_hits / len(keywords) if keywords else 0
 
-            # Phrase bonus (strong signal)
-            phrase_bonus = sum(0.3 for p in phrases if p in text_lower)
+            # Match bonus if query keywords match words in document filename (e.g. "resume", "accenture")
+            source_match_bonus = sum(0.4 for kw in keywords if kw in source_lower)
 
-            total_score = min(kw_score + phrase_bonus, 1.0)
-            if total_score > 0.2:  # Minimum threshold
+            # Phrase bonus (strong signal)
+            phrase_bonus = sum(0.3 for p in phrases if p in combined_target)
+
+            total_score = min(kw_score + source_match_bonus + phrase_bonus, 1.0)
+            if total_score > 0.15:  # Minimum threshold
                 hits[i] = total_score
 
         # Return top matches
