@@ -156,103 +156,91 @@ class RagEngine:
     #  QUERY / RETRIEVAL (Hybrid: Semantic + Keyword)
     # ═══════════════════════════════════════════════════
 
-    def query(self, question: str, top_k: int = 8) -> List[Dict]:
+    def query(self, question: str, top_k: int = 8, k_rrf: int = 60) -> List[Dict]:
         """
-        Hybrid retrieval: combines FAISS semantic search, source filename matching,
-        and query-conditioned header chunk (Chunk 0) inclusion.
+        Reciprocal Rank Fusion (RRF) Hybrid Retrieval.
+
+        Combines vector semantic search ranks and clean keyword search ranks
+        using the standard RRF formula: Score = 1/(60 + rank_sem) + 1/(60 + rank_kw).
+        Completely parameter-free, robust across all document types (PDFs, resumes, syllabi).
 
         Args:
             question: The user's question.
             top_k: Number of unique results to return.
+            k_rrf: RRF constant parameter (default 60).
 
         Returns:
-            List of dicts with keys: text, source, chunk_id, score, images.
+            List of dicts with keys: text, source, chunk_id, page, score.
         """
         if self.index is None or self.index.ntotal == 0:
             return []
 
-        # --- 1. Semantic search (FAISS) ---
+        # --- 1. Semantic search (FAISS) ranks ---
         q_emb = self.embedding_model.encode(
             [question], convert_to_numpy=True
         ).astype("float32")
 
-        fetch_k = min(top_k * 4, self.index.ntotal)
+        fetch_k = min(max(top_k * 10, 50), self.index.ntotal)
         distances, indices = self.index.search(q_emb, fetch_k)
 
-        semantic_results = {}
-        for idx, dist in zip(indices[0], distances[0]):
+        sem_ranks = {}
+        for rank, (idx, dist) in enumerate(zip(indices[0], distances[0])):
             if 0 <= idx < len(self.metadata):
-                semantic_results[idx] = float(dist)
+                sem_ranks[idx] = rank + 1
 
-        # --- 2. Source-Aware Keyword search (scan text + source filename) ---
-        keyword_hits = self._keyword_search(question, top_k=top_k * 3)
+        # --- 2. Keyword search ranks ---
+        kw_hits = self._keyword_search(question)
+        kw_sorted = sorted(kw_hits.keys(), key=lambda i: -kw_hits[i])
+        
+        kw_ranks = {}
+        for rank, idx in enumerate(kw_sorted):
+            kw_ranks[idx] = rank + 1
 
-        # --- 3. Combined score formula ---
-        scored = {}
-        all_indices = set(semantic_results.keys()).union(set(keyword_hits.keys()))
+        # --- 3. Reciprocal Rank Fusion (RRF) ---
+        rrf_scores = {}
+        candidate_indices = set(sem_ranks.keys()).union(set(kw_ranks.keys()))
 
-        for idx in all_indices:
-            sem_dist = semantic_results.get(idx, 1.0)
-            kw_rel = keyword_hits.get(idx, 0.0)
+        for idx in candidate_indices:
+            r_sem = sem_ranks.get(idx, 10000)
+            r_kw = kw_ranks.get(idx, 10000)
+            rrf_score = (1.0 / (k_rrf + r_sem)) + (1.0 / (k_rrf + r_kw))
+            rrf_scores[idx] = rrf_score
 
-            # Boost formula: higher keyword relevance strongly reduces distance
-            combined_score = sem_dist / (1.0 + 2.5 * kw_rel)
-            scored[idx] = combined_score
-
-        # --- 4. Sort candidates by score ---
-        sorted_indices = sorted(scored.keys(), key=lambda i: scored[i])
-
-        # Check if question specifically asks for document identity / author / candidate name
-        q_lower = question.lower()
-        identity_terms = ["name", "who", "author", "title", "candidate", "full name", "person", "written by"]
-        is_identity_query = any(term in q_lower for term in identity_terms)
-
-        final_candidates = list(sorted_indices)
-        if is_identity_query:
-            # For identity/name questions, prepend Chunk 0 (header/title) of top matched sources
-            top_sources = set(self.metadata[i].get("source", "") for i in sorted_indices[:top_k] if i < len(self.metadata))
-            header_indices = []
-            for i, meta in enumerate(self.metadata):
-                src = meta.get("source", "")
-                chunk_id = str(meta.get("chunk_id", ""))
-                if src in top_sources and (chunk_id.endswith("_0") or chunk_id == "0"):
-                    header_indices.append(i)
-            # Prepend header chunks ahead of body chunks
-            final_candidates = header_indices + [i for i in sorted_indices if i not in header_indices]
+        # --- 4. Sort candidates by RRF Score ---
+        sorted_by_rrf = sorted(rrf_scores.keys(), key=lambda i: -rrf_scores[i])
 
         results = []
-        seen_texts = set()
+        seen_fingerprints = set()
         source_counts = {}
-        max_per_source = max(3, top_k // 2)
+        max_per_source = max(4, top_k // 2)
 
-        for idx in final_candidates:
+        for idx in sorted_by_rrf:
             if 0 <= idx < len(self.metadata):
                 meta = self.metadata[idx].copy()
                 src = meta.get("source", "unknown")
-                text_fingerprint = meta.get("text", "")[:150].strip()
+                fp = meta.get("text", "")[:120].strip()
 
-                if text_fingerprint in seen_texts:
+                if fp in seen_fingerprints:
                     continue
-                seen_texts.add(text_fingerprint)
-                meta["score"] = scored.get(idx, 0.5)
+                seen_fingerprints.add(fp)
+                meta["score"] = rrf_scores[idx]
 
-                curr_count = source_counts.get(src, 0)
-                if curr_count < max_per_source or len(results) < top_k:
-                    source_counts[src] = curr_count + 1
+                curr_c = source_counts.get(src, 0)
+                if curr_c < max_per_source or len(results) < top_k:
+                    source_counts[src] = curr_c + 1
                     results.append(meta)
                     if len(results) >= top_k:
                         break
 
         return results
 
-    def _keyword_search(self, question: str, top_k: int = 14) -> Dict[int, float]:
+    def _keyword_search(self, question: str) -> Dict[int, float]:
         """
-        Keyword matching against chunk text and source filename.
-        Returns dict of {chunk_index: relevance_score (0-1)}.
+        Clean keyword matching against chunk text.
+        Returns dict of {chunk_index: keyword_match_count}.
         """
         import re as _re
 
-        # Extract meaningful keywords from the question (skip stopwords)
         stopwords = {
             "i", "me", "my", "we", "our", "you", "your", "the", "a", "an",
             "is", "are", "was", "were", "be", "been", "being", "have", "has",
@@ -263,7 +251,7 @@ class RagEngine:
             "and", "or", "but", "not", "no", "if", "then", "so", "than",
             "what", "which", "who", "whom", "how", "when", "where", "why",
             "all", "each", "every", "any", "some", "gonna", "going", "take",
-            "up", "get", "tell", "give", "also", "very", "just", "guy", "person",
+            "up", "get", "tell", "give", "also", "very", "just",
         }
         words = _re.findall(r'\b[a-zA-Z0-9]+\b', question.lower())
         keywords = [w for w in words if w not in stopwords and len(w) > 1]
@@ -271,51 +259,17 @@ class RagEngine:
         if not keywords:
             return {}
 
-        # Also extract multi-word phrases for better matching
-        q_lower = question.lower()
-        phrases = []
-        phrase_patterns = [
-            "program elective", "programme elective", "open elective",
-            "5th sem", "5th semester", "semester v", "semester 5",
-            "6th sem", "7th sem", "8th sem", "3rd sem", "4th sem",
-            "semester vi", "semester vii", "semester viii",
-            "semester iii", "semester iv", "semester i", "semester ii",
-            "data science", "machine learning", "artificial intelligence",
-            "web development", "full stack", "cloud computing",
-            "full name", "projects listed", "projects",
-        ]
-        for phrase in phrase_patterns:
-            if phrase in q_lower:
-                phrases.append(phrase)
-
-        # Score each chunk
         hits = {}
         for i, meta in enumerate(self.metadata):
             text_lower = meta.get("text", "").lower()
-            source_lower = meta.get("source", "").lower()
             if not text_lower:
                 continue
 
-            # Combine source filename and text for keyword matching
-            combined_target = f"{source_lower} {source_lower} {text_lower}"
+            score = sum(1 for kw in keywords if kw in text_lower)
+            if score > 0:
+                hits[i] = float(score)
 
-            # Keyword hit ratio
-            kw_hits = sum(1 for kw in keywords if kw in combined_target)
-            kw_score = kw_hits / len(keywords) if keywords else 0
-
-            # Match bonus if query keywords match words in document filename (e.g. "resume", "accenture")
-            source_match_bonus = sum(0.4 for kw in keywords if kw in source_lower)
-
-            # Phrase bonus (strong signal)
-            phrase_bonus = sum(0.3 for p in phrases if p in combined_target)
-
-            total_score = min(kw_score + source_match_bonus + phrase_bonus, 1.0)
-            if total_score > 0.15:  # Minimum threshold
-                hits[i] = total_score
-
-        # Return top matches
-        sorted_hits = sorted(hits.items(), key=lambda x: -x[1])[:top_k]
-        return dict(sorted_hits)
+        return hits
 
 
     # ═══════════════════════════════════════════════════
@@ -340,29 +294,24 @@ class RagEngine:
         context_parts = []
         for i, chunk in enumerate(context_chunks):
             source = chunk.get("source", "unknown")
+            page_info = f" (Page {chunk.get('page')})" if chunk.get("page") else ""
             text = chunk.get("text", "")
-            context_parts.append(f"[Source {i + 1}: {source}]\n{text}")
+            context_parts.append(f"[Source {i + 1}: {source}{page_info}]\n{text}")
         context = "\n\n".join(context_parts)
 
         # System prompt — comprehensive, helpful, and smart
         system_prompt = (
-            "You are an expert NMIT College AI Assistant with deep knowledge extraction skills.\n\n"
+            "You are an expert AI Research & Information Assistant with deep document comprehension skills.\n\n"
             "INSTRUCTIONS:\n"
-            "1. Carefully read ALL the provided context chunks. The answer is very likely "
-            "somewhere in the text — look for tables, lists, course codes, subject names, "
-            "semester numbers, and any structured data.\n"
-            "2. College documents often contain tables extracted as plain text. Rows may be "
-            "split across lines. Course codes look like '22ISE561'. Pay attention to these patterns.\n"
-            "3. Answer the question as COMPLETELY and HELPFULLY as possible. Use bullet points, "
-            "tables, and clear formatting.\n"
-            "4. If you find partial information, share what you found and mention what's missing.\n"
-            "5. ONLY say you don't have information if you genuinely cannot find ANYTHING relevant "
-            "in any of the context chunks.\n"
-            "6. Reference which source numbers you used."
+            "1. Carefully read ALL the provided context chunks. Context chunks come from uploaded PDFs, resumes, research papers, and documents.\n"
+            "2. Search for exact facts, definition tables, methodology steps, numbers, dataset details, course codes, and author details.\n"
+            "3. Answer the question as COMPLETELY, ACCURATELY, and HELPFULLY as possible using bullet points, tables, and clear Markdown formatting.\n"
+            "4. Clearly cite which Source numbers (and Page numbers if available) you retrieved each piece of information from.\n"
+            "5. ONLY say you don't have information if NO provided context chunk contains relevant details."
         )
 
         user_prompt = (
-            f"CONTEXT (from ingested documents — read carefully, information may be in tables or lists):\n\n"
+            f"CONTEXT (from ingested documents):\n\n"
             f"{context}\n\n"
             f"QUESTION: {question}\n\n"
             f"Provide a thorough, well-formatted answer:"
@@ -390,11 +339,9 @@ class RagEngine:
 
     def ingest_document(self, filepath: str) -> None:
         """Ingest a document file (PDF, DOCX, TXT, CSV) into the RAG index."""
-        from document_processor import load_document, chunk_text
+        from document_processor import load_document
         print(f"[RAG] Ingesting document: {filepath}")
-        text = load_document(filepath)
-        source_name = os.path.basename(filepath)
-        chunks = chunk_text(text, source_name=source_name)
+        chunks = load_document(filepath)
         self.add_chunks(chunks)
 
     def ingest_url(self, url: str) -> None:

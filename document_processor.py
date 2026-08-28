@@ -22,63 +22,69 @@ from typing import List, Dict
 #  DOCUMENT LOADING (LangChain-powered)
 # ═══════════════════════════════════════════════════════
 
-def load_document(filepath: str) -> str:
+def load_document(filepath: str) -> List[Dict]:
     """
     Load text content from a file using LangChain document loaders.
-
-    Supported formats: PDF, DOCX, TXT, CSV.
-
-    Args:
-        filepath: Path to the document file.
-
-    Returns:
-        Extracted text as a single string.
-
-    Raises:
-        ValueError: If the file extension is not supported.
-        FileNotFoundError: If the file does not exist.
+    Returns a list of chunk dicts: [{'text': ..., 'source': ..., 'chunk_id': ..., 'page': ...}].
     """
     if not os.path.exists(filepath):
         raise FileNotFoundError(f"File not found: {filepath}")
 
     ext = Path(filepath).suffix.lower()
+    source_name = os.path.basename(filepath)
 
-    try:
-        if ext == ".pdf":
-            return _load_pdf(filepath)
-        elif ext == ".docx":
-            return _load_docx(filepath)
-        elif ext == ".txt":
-            return _load_txt(filepath)
-        elif ext == ".csv":
-            return _load_csv(filepath)
-        else:
-            raise ValueError(
-                f"Unsupported file type: '{ext}'. Supported: .pdf, .docx, .txt, .csv"
-            )
-    except (ValueError, FileNotFoundError):
-        raise
-    except Exception as e:
-        print(f"[document_processor] Error loading {filepath}: {e}")
-        # Fallback: try reading as plain text
-        try:
-            return _load_txt(filepath)
-        except Exception:
-            raise ValueError(f"Failed to load {filepath}: {e}")
+    if ext == ".pdf":
+        return _load_pdf_page_aware(filepath, source_name=source_name)
+    elif ext == ".docx":
+        raw_text = _load_docx(filepath)
+        return chunk_text(raw_text, source_name=source_name)
+    elif ext == ".txt":
+        raw_text = _load_txt(filepath)
+        return chunk_text(raw_text, source_name=source_name)
+    elif ext == ".csv":
+        raw_text = _load_csv(filepath)
+        return chunk_text(raw_text, source_name=source_name)
+    else:
+        raise ValueError(
+            f"Unsupported file type: '{ext}'. Supported: .pdf, .docx, .txt, .csv"
+        )
 
 
-def _load_pdf(filepath: str) -> str:
-    """Extract text from a PDF using LangChain's PyPDFLoader."""
+def _load_pdf_page_aware(filepath: str, source_name: str, chunk_size: int = 700, overlap: int = 150) -> List[Dict]:
+    """Extract and split text page-by-page from a PDF to maintain page-aware granularity."""
     from langchain_community.document_loaders import PyPDFLoader
+    from langchain_text_splitters import RecursiveCharacterTextSplitter
+
     loader = PyPDFLoader(str(filepath))
     docs = loader.load()
-    pages = []
+
+    splitter = RecursiveCharacterTextSplitter(
+        chunk_size=chunk_size,
+        chunk_overlap=overlap,
+        length_function=len,
+        separators=["\n\n", "\n", ". ", " ", ""],
+    )
+
+    chunks = []
     for doc in docs:
-        text = doc.page_content.strip()
-        if text:
-            page_num = doc.metadata.get("page", "?")
-            pages.append(f"[Page {int(page_num) + 1}]\n{text}")
-    return _clean_text("\n\n".join(pages))
+        page_num = doc.metadata.get("page", 0) + 1
+        page_text = _clean_text(doc.page_content.strip())
+        if not page_text:
+            continue
+
+        page_splits = splitter.split_text(page_text)
+        for j, split_str in enumerate(page_splits):
+            split_str = split_str.strip()
+            if len(split_str) < 40:
+                continue
+            chunks.append({
+                "text": f"[Page {page_num}]\n{split_str}",
+                "source": source_name,
+                "chunk_id": f"{source_name}_p{page_num}_{j}",
+                "page": page_num,
+            })
+
+    return chunks
 
 
 def _load_docx(filepath: str) -> str:
@@ -106,45 +112,25 @@ def _load_csv(filepath: str) -> str:
 
 
 def _clean_text(text: str) -> str:
-    """
-    Clean up extracted text:
-    - Collapse multiple blank lines → single blank line
-    - Collapse multiple spaces → single space
-    - Strip leading/trailing whitespace
-    """
-    # Collapse 3+ newlines into 2
+    """Clean up extracted text."""
     text = re.sub(r"\n{3,}", "\n\n", text)
-    # Collapse multiple spaces (but not newlines) into one
     text = re.sub(r"[^\S\n]+", " ", text)
     return text.strip()
 
 
 # ═══════════════════════════════════════════════════════
-#  TEXT CHUNKING (LangChain RecursiveCharacterTextSplitter)
+#  TEXT CHUNKING
 # ═══════════════════════════════════════════════════════
 
 def chunk_text(
     text: str,
     source_name: str,
-    chunk_size: int = 500,
-    overlap: int = 100,
+    chunk_size: int = 700,
+    overlap: int = 150,
     images: List[str] = None,
 ) -> List[Dict[str, str]]:
     """
-    Split text into overlapping chunks using LangChain's RecursiveCharacterTextSplitter.
-
-    Uses character-based splitting with intelligent separators that respect
-    paragraph, sentence, and word boundaries.
-
-    Args:
-        text:        The full text to split.
-        source_name: The source identifier (filename or URL).
-        chunk_size:  Approximate number of characters per chunk.
-        overlap:     Number of characters to overlap between consecutive chunks.
-        images:      Optional list of image URLs associated with this source.
-
-    Returns:
-        List of dicts, each with keys: 'text', 'source', 'chunk_id', 'images'.
+    Split non-PDF text into overlapping chunks using RecursiveCharacterTextSplitter.
     """
     if not text or not text.strip():
         return []
@@ -163,7 +149,7 @@ def chunk_text(
     chunks = []
     for i, chunk_str in enumerate(split_texts):
         chunk_str = chunk_str.strip()
-        if len(chunk_str) < 50:  # Skip tiny chunks
+        if len(chunk_str) < 40:
             continue
         chunks.append({
             "text": chunk_str,
