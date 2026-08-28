@@ -20,6 +20,18 @@ except ImportError:
             return decorator
     spaces = _MockSpaces()
 
+# Dummy GPU function — satisfies ZeroGPU startup requirement
+@spaces.GPU
+def _gpu_init():
+    """Dummy GPU function required by HF Spaces ZeroGPU infrastructure."""
+    return "GPU Initialized"
+
+# Call _gpu_init at startup so ZeroGPU registers a GPU function call
+try:
+    _gpu_init()
+except Exception as e:
+    print(f"[ZeroGPU] Init call note: {e}")
+
 import gradio as gr
 
 # Load .env file (for local development)
