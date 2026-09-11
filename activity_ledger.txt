@@ -1,0 +1,2 @@
+# Project Engineering Activity Ledger
+[2026-09-11T09:11:40+05:30] (0001) feat: tune reciprocal rank fusion weights for short academic queries
