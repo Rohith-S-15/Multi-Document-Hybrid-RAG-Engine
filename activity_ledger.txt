@@ -15,3 +15,4 @@
 [2026-09-13T14:59:40+05:30] (0014) feat: add query intent classifier for admission vs exam fee prompts
 [2026-09-13T17:49:46+05:30] (0015) test: verify hybrid search fallback when vector index is rebuilding
 [2026-09-13T20:47:40+05:30] (0016) chore: clean up legacy chroma persistence directory configurations
+[2026-09-14T09:10:14+05:30] (0017) style: add subtle glow border to active knowledge source card
