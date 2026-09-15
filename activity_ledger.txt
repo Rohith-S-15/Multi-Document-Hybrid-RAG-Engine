@@ -30,3 +30,4 @@
 [2026-09-15T15:46:47+05:30] (0029) fix: resolve Gradio 6 SSR hydration mismatch on initial load
 [2026-09-15T17:30:18+05:30] (0030) perf: optimize token sanitizer regex parsing pass
 [2026-09-15T19:15:44+05:30] (0031) docs: update deployment checklist for Hugging Face Spaces
+[2026-09-15T20:58:18+05:30] (0032) refactor: clean up document ingestion memory management
