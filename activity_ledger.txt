@@ -27,3 +27,4 @@
 [2026-09-15T10:44:22+05:30] (0026) docs: clarify GPU allocation rules for ZeroGPU runtime
 [2026-09-15T12:26:57+05:30] (0027) perf: accelerate BM25 tokenization with precompiled inverted index
 [2026-09-15T14:11:34+05:30] (0028) feat: tune reciprocal rank fusion weights for short academic queries
+[2026-09-15T15:46:47+05:30] (0029) fix: resolve Gradio 6 SSR hydration mismatch on initial load
