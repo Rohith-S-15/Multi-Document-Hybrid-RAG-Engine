@@ -33,3 +33,4 @@
 [2026-09-15T20:58:18+05:30] (0032) refactor: clean up document ingestion memory management
 [2026-09-15T22:30:49+05:30] (0033) test: evaluate retrieval MRR across 50 sample college FAQ queries
 [2026-09-16T09:11:29+05:30] (0034) feat: improve source citation formatting in Gradio response cards
+[2026-09-16T12:37:55+05:30] (0035) fix: handle edge case in empty PDF metadata parsing
