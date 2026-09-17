@@ -39,3 +39,4 @@
 [2026-09-17T09:09:42+05:30] (0038) test: add unit coverage for syllabus section extractors
 [2026-09-17T10:54:17+05:30] (0039) docs: add production deployment troubleshooting guide
 [2026-09-17T12:36:23+05:30] (0040) refactor: simplify embedding cache lookup for frequent questions
+[2026-09-17T14:29:32+05:30] (0041) feat: add query intent classifier for admission vs exam fee prompts
