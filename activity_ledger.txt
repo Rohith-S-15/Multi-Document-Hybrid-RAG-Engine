@@ -67,3 +67,4 @@
 [2026-09-21T16:22:25+05:30] (0066) docs: add production deployment troubleshooting guide
 [2026-09-21T20:01:54+05:30] (0067) refactor: simplify embedding cache lookup for frequent questions
 [2026-09-22T09:28:47+05:30] (0068) feat: add query intent classifier for admission vs exam fee prompts
+[2026-09-22T10:53:29+05:30] (0069) test: verify hybrid search fallback when vector index is rebuilding
