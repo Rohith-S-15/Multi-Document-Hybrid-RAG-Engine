@@ -71,3 +71,4 @@
 [2026-09-22T12:20:46+05:30] (0070) chore: clean up legacy chroma persistence directory configurations
 [2026-09-22T13:53:15+05:30] (0071) style: add subtle glow border to active knowledge source card
 [2026-09-22T15:32:23+05:30] (0072) perf: streamline chunk deduplication filter in vector retriever
+[2026-09-22T17:08:23+05:30] (0073) fix: preserve original PDF page coordinates during table extraction
