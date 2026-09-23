@@ -75,3 +75,4 @@
 [2026-09-22T18:33:31+05:30] (0074) docs: document cross-encoder reranker latency benchmarks
 [2026-09-22T20:11:26+05:30] (0075) refactor: consolidate HuggingFace client initialization logic
 [2026-09-22T21:49:45+05:30] (0076) style: refine midnight cyber-glass prompt chip animations
+[2026-09-23T09:22:58+05:30] (0077) feat: cache computed query embeddings in local LRU pool
