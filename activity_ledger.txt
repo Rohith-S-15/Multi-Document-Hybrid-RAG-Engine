@@ -83,3 +83,4 @@
 [2026-09-24T13:00:50+05:30] (0082) feat: tune reciprocal rank fusion weights for short academic queries
 [2026-09-24T16:35:12+05:30] (0083) fix: resolve Gradio 6 SSR hydration mismatch on initial load
 [2026-09-24T20:09:45+05:30] (0084) perf: optimize token sanitizer regex parsing pass
+[2026-09-25T09:00:31+05:30] (0085) docs: update deployment checklist for Hugging Face Spaces
