@@ -92,3 +92,4 @@
 [2026-09-25T17:48:23+05:30] (0091) style: adjust contrast ratio on citation badge pills
 [2026-09-25T19:14:18+05:30] (0092) test: add unit coverage for syllabus section extractors
 [2026-09-25T20:38:47+05:30] (0093) docs: add production deployment troubleshooting guide
+[2026-09-25T22:04:48+05:30] (0094) refactor: simplify embedding cache lookup for frequent questions
