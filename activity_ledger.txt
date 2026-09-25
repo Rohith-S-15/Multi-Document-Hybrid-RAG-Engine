@@ -86,3 +86,4 @@
 [2026-09-25T09:00:31+05:30] (0085) docs: update deployment checklist for Hugging Face Spaces
 [2026-09-25T10:34:45+05:30] (0086) refactor: clean up document ingestion memory management
 [2026-09-25T11:59:26+05:30] (0087) test: evaluate retrieval MRR across 50 sample college FAQ queries
+[2026-09-25T13:19:43+05:30] (0088) feat: improve source citation formatting in Gradio response cards
