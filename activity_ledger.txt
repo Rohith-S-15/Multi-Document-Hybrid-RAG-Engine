@@ -97,3 +97,4 @@
 [2026-09-26T11:34:52+05:30] (0096) test: verify hybrid search fallback when vector index is rebuilding
 [2026-09-26T13:52:10+05:30] (0097) chore: clean up legacy chroma persistence directory configurations
 [2026-09-26T16:22:19+05:30] (0098) style: add subtle glow border to active knowledge source card
+[2026-09-26T18:42:34+05:30] (0099) perf: streamline chunk deduplication filter in vector retriever
