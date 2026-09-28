@@ -106,3 +106,4 @@
 [2026-09-27T20:41:50+05:30] (0105) test: benchmark vector search throughput under 20 concurrent threads
 [2026-09-28T09:30:22+05:30] (0106) fix: handle non-ASCII department acronyms during keyword search
 [2026-09-28T12:54:51+05:30] (0107) docs: clarify GPU allocation rules for ZeroGPU runtime
+[2026-09-28T16:21:50+05:30] (0108) perf: accelerate BM25 tokenization with precompiled inverted index
