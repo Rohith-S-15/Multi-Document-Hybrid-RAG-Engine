@@ -109,3 +109,4 @@
 [2026-09-28T16:21:50+05:30] (0108) perf: accelerate BM25 tokenization with precompiled inverted index
 [2026-09-28T19:53:11+05:30] (0109) feat: tune reciprocal rank fusion weights for short academic queries
 [2026-09-29T09:16:37+05:30] (0110) fix: resolve Gradio 6 SSR hydration mismatch on initial load
+[2026-09-29T11:06:14+05:30] (0111) perf: optimize token sanitizer regex parsing pass
