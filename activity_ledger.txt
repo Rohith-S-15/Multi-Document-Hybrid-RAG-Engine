@@ -131,3 +131,4 @@
 [2026-10-01T17:42:30+05:30] (0130) style: refine midnight cyber-glass prompt chip animations
 [2026-10-01T20:26:28+05:30] (0131) feat: cache computed query embeddings in local LRU pool
 [2026-10-02T09:17:15+05:30] (0132) test: benchmark vector search throughput under 20 concurrent threads
+[2026-10-02T12:51:46+05:30] (0133) fix: handle non-ASCII department acronyms during keyword search
