@@ -142,3 +142,4 @@
 [2026-10-04T09:11:32+05:30] (0141) test: evaluate retrieval MRR across 50 sample college FAQ queries
 [2026-10-04T11:41:36+05:30] (0142) feat: improve source citation formatting in Gradio response cards
 [2026-10-04T14:11:47+05:30] (0143) fix: handle edge case in empty PDF metadata parsing
+[2026-10-04T16:27:51+05:30] (0144) perf: batch document embeddings to minimize inference roundtrips
