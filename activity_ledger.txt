@@ -140,3 +140,4 @@
 [2026-10-03T17:38:52+05:30] (0139) docs: update deployment checklist for Hugging Face Spaces
 [2026-10-03T20:23:30+05:30] (0140) refactor: clean up document ingestion memory management
 [2026-10-04T09:11:32+05:30] (0141) test: evaluate retrieval MRR across 50 sample college FAQ queries
+[2026-10-04T11:41:36+05:30] (0142) feat: improve source citation formatting in Gradio response cards
