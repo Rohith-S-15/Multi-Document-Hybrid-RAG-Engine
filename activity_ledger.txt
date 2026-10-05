@@ -149,3 +149,4 @@
 [2026-10-05T10:53:26+05:30] (0148) refactor: simplify embedding cache lookup for frequent questions
 [2026-10-05T12:32:23+05:30] (0149) feat: add query intent classifier for admission vs exam fee prompts
 [2026-10-05T14:25:55+05:30] (0150) test: verify hybrid search fallback when vector index is rebuilding
+[2026-10-05T16:04:54+05:30] (0151) chore: clean up legacy chroma persistence directory configurations
