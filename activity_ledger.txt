@@ -153,3 +153,4 @@
 [2026-10-05T17:44:28+05:30] (0152) style: add subtle glow border to active knowledge source card
 [2026-10-05T19:36:30+05:30] (0153) perf: streamline chunk deduplication filter in vector retriever
 [2026-10-05T21:30:42+05:30] (0154) fix: preserve original PDF page coordinates during table extraction
+[2026-10-06T09:12:21+05:30] (0155) docs: document cross-encoder reranker latency benchmarks
