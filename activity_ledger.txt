@@ -161,3 +161,4 @@
 [2026-10-07T11:20:34+05:30] (0160) fix: handle non-ASCII department acronyms during keyword search
 [2026-10-07T13:18:48+05:30] (0161) docs: clarify GPU allocation rules for ZeroGPU runtime
 [2026-10-07T15:26:34+05:30] (0162) perf: accelerate BM25 tokenization with precompiled inverted index
+[2026-10-07T17:28:17+05:30] (0163) feat: tune reciprocal rank fusion weights for short academic queries
