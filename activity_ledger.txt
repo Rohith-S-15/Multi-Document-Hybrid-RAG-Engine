@@ -166,3 +166,4 @@
 [2026-10-07T21:45:28+05:30] (0165) perf: optimize token sanitizer regex parsing pass
 [2026-10-08T09:01:21+05:30] (0166) docs: update deployment checklist for Hugging Face Spaces
 [2026-10-08T12:36:37+05:30] (0167) refactor: clean up document ingestion memory management
+[2026-10-08T16:17:49+05:30] (0168) test: evaluate retrieval MRR across 50 sample college FAQ queries
