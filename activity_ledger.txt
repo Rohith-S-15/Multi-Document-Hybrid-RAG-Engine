@@ -186,3 +186,4 @@
 [2026-10-11T13:08:10+05:30] (0185) feat: cache computed query embeddings in local LRU pool
 [2026-10-11T15:12:26+05:30] (0186) test: benchmark vector search throughput under 20 concurrent threads
 [2026-10-11T17:07:45+05:30] (0187) fix: handle non-ASCII department acronyms during keyword search
+[2026-10-11T19:14:44+05:30] (0188) docs: clarify GPU allocation rules for ZeroGPU runtime
