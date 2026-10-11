@@ -181,3 +181,4 @@
 [2026-10-10T14:51:50+05:30] (0180) perf: streamline chunk deduplication filter in vector retriever
 [2026-10-10T17:40:26+05:30] (0181) fix: preserve original PDF page coordinates during table extraction
 [2026-10-10T20:39:29+05:30] (0182) docs: document cross-encoder reranker latency benchmarks
+[2026-10-11T09:07:52+05:30] (0183) refactor: consolidate HuggingFace client initialization logic
