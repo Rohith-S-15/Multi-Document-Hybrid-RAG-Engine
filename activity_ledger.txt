@@ -197,3 +197,4 @@
 [2026-10-12T19:27:25+05:30] (0196) feat: improve source citation formatting in Gradio response cards
 [2026-10-12T21:20:38+05:30] (0197) fix: handle edge case in empty PDF metadata parsing
 [2026-10-13T09:22:19+05:30] (0198) perf: batch document embeddings to minimize inference roundtrips
+[2026-10-13T11:41:15+05:30] (0199) style: adjust contrast ratio on citation badge pills
