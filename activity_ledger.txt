@@ -198,3 +198,4 @@
 [2026-10-12T21:20:38+05:30] (0197) fix: handle edge case in empty PDF metadata parsing
 [2026-10-13T09:22:19+05:30] (0198) perf: batch document embeddings to minimize inference roundtrips
 [2026-10-13T11:41:15+05:30] (0199) style: adjust contrast ratio on citation badge pills
+[2026-10-13T13:59:55+05:30] (0200) test: add unit coverage for syllabus section extractors
