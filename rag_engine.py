@@ -1,21 +1,21 @@
 """
-rag_engine.py — Core RAG engine for the College RAG Chatbot.
+rag_engine.py — Core Multi-Document Hybrid RAG Engine.
 
-Handles: FAISS vector storage, sentence-transformer embeddings,
-         Groq LLM integration, document/URL ingestion, and answer generation.
+Handles: FAISS dense vector search, sentence-transformer semantic embeddings,
+         Groq LLM inference, multi-format document ingestion, and grounded answer synthesis.
 
-Architecture (inspired by Krishna Naik's RAG Tutorial):
-  - Embeddings: sentence-transformers/all-MiniLM-L6-v2
-  - Vector Store: FAISS (Facebook AI Similarity Search)
-  - LLM: Groq API (gemma2-9b-it) via LangChain
-  - Chunking: LangChain RecursiveCharacterTextSplitter
+Architecture:
+  - Embeddings: sentence-transformers/all-MiniLM-L6-v2 (384-dimensional dense vectors)
+  - Vector Index: FAISS (Facebook AI Similarity Search) with cosine similarity
+  - LLM Inference: Groq API (gemma2-9b-it) via LangChain
+  - Chunking: RecursiveCharacterTextSplitter with page-aware metadata tracking
 
 Integration contract:
-  - RagEngine.ingest_document(filepath)       → ingest a file
-  - RagEngine.ingest_url(url)                 → scrape + ingest a URL
-  - RagEngine.query(question, top_k)          → retrieve relevant chunks
-  - RagEngine.generate_answer(question, chunks) → generate LLM answer
-  - RagEngine.get_stats()                     → index statistics
+  - RagEngine.ingest_document(filepath)         → ingest a file (PDF, DOCX, TXT)
+  - RagEngine.ingest_url(url)                   → scrape + ingest a live URL
+  - RagEngine.query(question, top_k)            → retrieve relevant semantic chunks
+  - RagEngine.generate_answer(question, chunks) → generate grounded LLM answer with citations
+  - RagEngine.get_stats()                       → index statistics
 """
 
 import os

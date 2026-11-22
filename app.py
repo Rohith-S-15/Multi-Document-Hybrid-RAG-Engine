@@ -207,35 +207,35 @@ def clear_chat():
 #  BUILD GRADIO UI — demo must be a top-level variable
 # ════════════════════════════════════════════════════════
 
-demo = gr.Blocks(title="🎓 NMIT College RAG Chatbot")
+demo = gr.Blocks(title="⚡ Multi-Document Hybrid RAG Engine")
 
 with demo:
-    gr.Markdown("# 🎓 NMIT College RAG Chatbot")
+    gr.Markdown("# ⚡ Multi-Document Hybrid RAG Engine")
     gr.Markdown(
-        "Upload college documents (PDF, DOCX, TXT, CSV) or scrape public college "
-        "websites to build a knowledge base, then ask questions! "
-        "Powered by **Groq AI** + **FAISS** + **LangChain**."
+        "Context-grounded information retrieval and question-answering across multi-format documents "
+        "(PDF, DOCX, TXT) and live web pages with verified source citations. "
+        "Powered by **FAISS** + **LangChain** + **Sentence-Transformers** + **Groq AI**."
     )
 
-    with gr.Tab("💬 Chat"):
-        gr.Markdown("### Ask questions about your college data")
-        chatbot = gr.Chatbot(label="Conversation", height=450)
+    with gr.Tab("💬 Query & Chat"):
+        gr.Markdown("### Ask questions against ingested knowledge base")
+        chatbot = gr.Chatbot(label="Conversation & Grounded Answers", height=450)
         with gr.Row():
             msg = gr.Textbox(
                 label="Your Question",
-                placeholder="Ask about courses, placements, facilities, admissions...",
+                placeholder="Ask specific questions about policies, course structures, reports, or documentation...",
                 lines=2,
                 scale=4,
             )
-            submit_btn = gr.Button("Send", variant="primary", scale=1)
+            submit_btn = gr.Button("Query", variant="primary", scale=1)
         with gr.Row():
             clear_btn = gr.Button("🗑️ Clear Chat", variant="secondary")
 
         gr.Markdown(
-            "**Try asking:** *What courses does NMIT offer?* · "
-            "*What are the placement statistics?* · "
-            "*Tell me about hostel facilities* · "
-            "*What is the admission process?*"
+            "**Example queries:** *What are the key policy requirements?* · "
+            "*Summarize the admission and fee regulations* · "
+            "*Extract key performance metrics and statistics* · "
+            "*What are the required submission deadlines?*"
         )
 
         submit_btn.click(respond, inputs=[msg, chatbot], outputs=[msg, chatbot])
@@ -255,10 +255,10 @@ with demo:
                 ingest_file_btn = gr.Button("Ingest Uploaded File", variant="primary")
                 file_status = gr.Textbox(label="Status", interactive=False, lines=2)
             with gr.Column():
-                gr.Markdown("#### 🌐 Scrape Website")
+                gr.Markdown("#### 🌐 Ingest Web URL")
                 url_input = gr.Textbox(
-                    label="Enter College Website URL",
-                    placeholder="https://nitte.edu.in/nmit/about-nmit-bangalore.php",
+                    label="Enter Public Web URL",
+                    placeholder="https://example.com/documentation-page",
                 )
                 ingest_url_btn = gr.Button("Ingest URL", variant="primary")
                 url_status = gr.Textbox(label="Status", interactive=False, lines=2)
@@ -267,7 +267,7 @@ with demo:
         ingest_url_btn.click(ingest_url, inputs=url_input, outputs=url_status)
 
         gr.Markdown("---")
-        gr.Markdown("#### 📊 Index Status")
+        gr.Markdown("#### 📊 Index Statistics")
         index_info = gr.Textbox(label="Current Index", interactive=False, lines=5)
         with gr.Row():
             refresh_btn = gr.Button("🔄 Refresh Stats")
@@ -276,28 +276,27 @@ with demo:
         refresh_btn.click(get_index_info, outputs=index_info)
         clear_index_btn.click(clear_index, outputs=index_info)
 
-    with gr.Tab("ℹ️ About"):
+    with gr.Tab("ℹ️ Architecture & Pipeline"):
         gr.Markdown("""
-        ## How it works
-        1. **Ingest**: Upload documents or provide URLs to college websites.
-        2. **Process**: Text is extracted and chunked using LangChain's RecursiveCharacterTextSplitter.
-        3. **Embed**: Chunks are embedded using `sentence-transformers/all-MiniLM-L6-v2`.
-        4. **Store**: Embeddings are stored in a FAISS vector index for fast similarity search.
-        5. **Query**: When you ask a question, the system retrieves the most relevant chunks.
-        6. **Answer**: The retrieved context is sent to **Groq AI** (qwen/qwen3.6-27b) to generate a grounded answer.
-        7. **Cite**: The answer references specific sources and may include related images.
-        ## Tech Stack
-        | Component | Technology |
-        |-----------|------------|
-        | **LLM** | Groq API (qwen/qwen3.6-27b) |
-        | **Embeddings** | sentence-transformers/all-MiniLM-L6-v2 |
-        | **Vector Store** | FAISS (Facebook AI Similarity Search) |
-        | **Chunking** | LangChain RecursiveCharacterTextSplitter |
-        | **Document Parsing** | LangChain loaders (PDF, DOCX, TXT, CSV) |
-        | **Web Scraping** | BeautifulSoup4 + requests |
-        | **UI** | Gradio |
-        ## Built by
-        Rohit S — NMIT Bangalore | Resume Portfolio Project
+        ## Retrieval-Augmented Generation Architecture
+        1. **Multi-Source Ingestion**: Ingest multi-page PDFs, Word documents (.docx), text files, or live URLs.
+        2. **Semantic Text Chunking**: Decompose raw text using `RecursiveCharacterTextSplitter` with dynamic chunk overlap (1000 tokens, 200 overlap) and metadata preservation.
+        3. **Dense Vector Embeddings**: Encode text chunks into 384-dimensional dense vectors using `sentence-transformers/all-MiniLM-L6-v2`.
+        4. **Similarity Indexing**: Store normalized vectors in a FAISS L2/cosine index for sub-millisecond similarity search.
+        5. **Contextual Assembly & Reranking**: Retrieve top-k semantic passages, prepend document header metadata, and construct structured prompt context.
+        6. **LLM Synthesis**: Stream generation through Groq API (`gemma2-9b-it`) with strict grounding to prevent hallucinations.
+        7. **Citation Verification**: Every generated claim is mapped back to source filenames, page numbers, and cosine distance scores.
+
+        ## Core Infrastructure
+        | Component | Technology | Role |
+        |---|---|---|
+        | **LLM Inference** | Groq Cloud API | Ultra-low latency token generation |
+        | **Dense Embeddings** | `sentence-transformers/all-MiniLM-L6-v2` | Semantic text encoding |
+        | **Vector Store** | FAISS (Facebook AI Similarity Search) | High-throughput nearest neighbor search |
+        | **Orchestration** | LangChain Core | Document loaders & prompt management |
+        | **Web Ingestion** | BeautifulSoup4 + Requests | Clean DOM extraction & image parsing |
+        | **Interface** | Gradio | Reactive dashboard with streaming support |
+        """)
         """)
 
 

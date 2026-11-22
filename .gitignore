@@ -1,5 +1,7 @@
 # Environment secrets
 .env
+.env.local
+.env.*.local
 
 # Python
 __pycache__/
@@ -7,13 +9,24 @@ __pycache__/
 *.pyo
 venv/
 .venv/
+.pytest_cache/
 
-# ChromaDB local storage
+# Local Vector Storage & Persistent Embeddings
 chroma_db/
+faiss_store/
+*.faiss
+*.pkl
 
-# OS
+# Personal documents, interview prep docs & uploads in root
+*.pdf
+*.docx
+PROJECT_*.md
+college_rag_chatbot.zip
+
+# OS files
 .DS_Store
 Thumbs.db
+ehthumbs.db
 
 # IDE
 .vscode/
